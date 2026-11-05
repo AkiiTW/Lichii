@@ -17,6 +17,7 @@
 #include <queue>
 
 #include "common/polyfill_thread.h"
+#include "common/nx2_placement.h"
 #include "common/thread.h"
 #include "common/unique_function.h"
 
@@ -44,6 +45,7 @@ public:
             Common::SetCurrentThreadName(thread_name.c_str());
             if (placement != ThreadPlacement::Default) {
                 Common::SetCurrentThreadPriority(ThreadPriority::Low);
+                Nx2Placement::Apply(Nx2Placement::Role::Background);
             }
             switch (placement) {
             case ThreadPlacement::Efficiency:
