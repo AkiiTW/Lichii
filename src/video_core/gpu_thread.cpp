@@ -9,6 +9,7 @@
 
 #include "common/assert.h"
 #include "common/dkb_cpu_trace.h"
+#include "common/nx2_placement.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "common/thread.h"
@@ -54,6 +55,7 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
         Common::SetCurrentThreadPriority(Common::ThreadPriority::Critical);
         Common::PinCurrentThread(Common::PinnedRole::GpuFront);
         Common::SetCurrentThreadToPerformanceCores();
+        Common::Nx2Placement::Apply(Common::Nx2Placement::Role::GpuFront);
         system.RegisterHostThread();
 
         auto current_context = context.Acquire();

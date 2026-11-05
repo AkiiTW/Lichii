@@ -6,6 +6,7 @@
 
 #include "common/dkb_cpu_trace.h"
 #include "common/fiber.h"
+#include "common/nx2_placement.h"
 #include "common/scope_exit.h"
 #include "common/thread.h"
 #include "common/settings.h"
@@ -181,6 +182,7 @@ void CpuManager::RunThread(std::stop_token token, std::size_t core) {
     Common::SetCurrentThreadPriority(Common::ThreadPriority::Critical);
     Common::SetCurrentThreadToPerformanceCores();
     Common::PinCurrentThread(Common::PinnedRole::GuestCore);
+    Common::Nx2Placement::Apply(Common::Nx2Placement::Role::GuestCore);
     auto& data = core_data[core];
     data.host_context = Common::Fiber::ThreadToFiber();
 

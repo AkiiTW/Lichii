@@ -19,6 +19,7 @@
 
 #include "common/dkb_cpu_trace.h"
 #include "common/logging.h"
+#include "common/nx2_placement.h"
 #include "common/settings.h"
 #include "common/thread.h"
 #include "core/core.h"
@@ -816,6 +817,7 @@ void GpuSplit::BackLoop(std::stop_token stop_token) {
     Common::SetCurrentThreadPriority(Common::ThreadPriority::Critical);
     Common::PinCurrentThread(Common::PinnedRole::GpuBack);
     Common::SetCurrentThreadToPerformanceCores();
+    Common::Nx2Placement::Apply(Common::Nx2Placement::Role::GpuBack);
     system->RegisterHostThread();
 #ifdef _WIN32
     g_back_thread_id.store(GetCurrentThreadId(), std::memory_order_relaxed);
