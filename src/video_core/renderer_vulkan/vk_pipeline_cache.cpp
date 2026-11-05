@@ -406,6 +406,14 @@ size_t GetTotalPipelineWorkers() {
     }
     return std::min(max_core_threads, desired);
 #else
+    // EXPERIMENT: EDEN_NX2_PIPELINE_WORKERS=<n> caps the builders. With one per logical
+    // processor, a burst of new pipelines also takes the SMT siblings of the GPU threads.
+    if (const char* value = std::getenv("EDEN_NX2_PIPELINE_WORKERS"); value != nullptr) {
+        const long requested = std::strtol(value, nullptr, 10);
+        if (requested > 0) {
+            return std::min(max_core_threads, static_cast<size_t>(requested));
+        }
+    }
     return max_core_threads;
 #endif
 }
