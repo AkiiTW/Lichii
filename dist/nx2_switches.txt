@@ -22,6 +22,18 @@ EDEN_NX2_FENCE_BATCH=1
 # Enable only if frame pacing stability is preferred over responsive controls.
 #EDEN_NX2_FRAMES_AHEAD=2
 
+# --- Experiments: CPUs with several L3 domains (Ryzen 3000/5000 with 8+ cores) ---
+# Keep GPU, GPUBack and VulkanWorker on one L3 domain (CCX/CCD): their ring handoffs stop
+# crossing the Infinity Fabric. "split" also keeps guest CPU cores and pipeline/texture workers
+# on the other domains. Off by default; the log shows the masks ("Nx2Placement").
+#EDEN_NX2_PLACEMENT=gpu
+#EDEN_NX2_PLACEMENT=split
+# Which L3 domain gets the GPU threads (0 = the one with CPU 0; default: the last one).
+#EDEN_NX2_PLACEMENT_DOMAIN=0
+
+# Cap the pipeline (shader) builder threads (default: logical processors - 1).
+#EDEN_NX2_PIPELINE_WORKERS=6
+
 # --- Workarounds / Debug ---
 # Terrain/indirect drawing fix for Donkey Kong Bananza: enabled by default. Set to 0 only to leave to GPU.
 #EDEN_NX2_RESETFIX=0
