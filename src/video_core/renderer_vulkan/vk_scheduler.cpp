@@ -23,6 +23,7 @@
 #include "common/logging.h"
 #include "common/settings.h"
 #include "common/dkb_cpu_trace.h"
+#include "common/nx2_placement.h"
 #include "common/thread.h"
 #include "video_core/gpu_logging/gpu_logging.h"
 #include "video_core/nx2_profile.h"
@@ -489,6 +490,7 @@ void Scheduler::WorkerThread(std::stop_token stop_token) {
     const Common::DkbCpuTrace::Registration trace_thread{Common::DkbCpuTrace::Role::VulkanWorker};
     Common::SetCurrentThreadPriority(Common::ThreadPriority::Critical);
     Common::SetCurrentThreadToPerformanceCores();
+    Common::Nx2Placement::Apply(Common::Nx2Placement::Role::VulkanWorker);
 
     const auto TryPopQueue{[this](auto& work) -> bool {
         if (work_queue.empty()) {
