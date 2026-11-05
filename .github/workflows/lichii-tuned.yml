@@ -11,13 +11,21 @@ on:
         type: choice
         options: [zen2, zen4, v3, generic]
         default: zen2
+  push:
+    branches:
+      - claude/oot-zen2
+    paths:
+      - "src/**"
+      - "CMakeLists.txt"
+      - "dist/**"
+      - ".github/workflows/lichii-tuned.yml"
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: windows ${{ inputs.preset }}${{ matrix.lto && ' + LTO' || '' }}
+    name: windows ${{ inputs.preset || 'zen2' }}${{ matrix.lto && ' + LTO' || '' }}
     runs-on: windows-2022
     timeout-minutes: 350
     strategy:
@@ -66,9 +74,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .ccache
-          key: objects-tuned-${{ inputs.preset }}-${{ matrix.lto }}-${{ github.sha }}-${{ github.run_id }}
+          key: objects-tuned-${{ inputs.preset || 'zen2' }}-${{ matrix.lto }}-${{ github.sha }}-${{ github.run_id }}
           restore-keys: |
-            objects-tuned-${{ inputs.preset }}-${{ matrix.lto }}-
+            objects-tuned-${{ inputs.preset || 'zen2' }}-${{ matrix.lto }}-
 
       - name: Configure
         shell: msys2 {0}
@@ -89,11 +97,11 @@ jobs:
             -DVulkanHeaders_FORCE_BUNDLED=ON \
             -DVulkanUtilityLibraries_FORCE_BUNDLED=ON \
             -DENABLE_UPDATE_CHECKER=OFF \
-            -DLICHII_BUILD_TAG=tuned-${{ inputs.preset }}-${{ github.run_number }} \
-            -DLICHII_BUILD_PLATFORM=windows-x86_64-${{ inputs.preset }} \
+            -DLICHII_BUILD_TAG=tuned-${{ inputs.preset || 'zen2' }}-${{ github.run_number }} \
+            -DLICHII_BUILD_PLATFORM=windows-x86_64-${{ inputs.preset || 'zen2' }} \
             -DUSE_DISCORD_PRESENCE=OFF \
             -DUSE_CCACHE=ON \
-            -DYUZU_BUILD_PRESET=${{ inputs.preset }} \
+            -DYUZU_BUILD_PRESET=${{ inputs.preset || 'zen2' }} \
             -DENABLE_LTO=${{ matrix.lto && 'ON' || 'OFF' }} \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
@@ -150,7 +158,7 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v7
         with:
-          name: lichii-windows-${{ inputs.preset }}${{ matrix.lto && '-lto' || '' }}-${{ github.sha }}
+          name: lichii-windows-${{ inputs.preset || 'zen2' }}${{ matrix.lto && '-lto' || '' }}-${{ github.sha }}
           path: build/release/bin/
           if-no-files-found: error
           retention-days: 14
