@@ -31,6 +31,11 @@ EDEN_NX2_FENCE_BATCH=1
 # Which L3 domain gets the GPU threads (0 = the one with CPU 0; default: the last one).
 #EDEN_NX2_PLACEMENT_DOMAIN=0
 
+# Keep every built pipeline for the whole session. By default one unused for 9000 frames is
+# destroyed, and a Switch 2 program's pipeline is then translated again on the GPU thread when it
+# comes back (the stutter of a first visit, again). 0 = never destroy.
+EDEN_NX2_PIPELINE_EVICT_FRAMES=0
+
 # Cap the pipeline (shader) builder threads (default: logical processors - 1).
 #EDEN_NX2_PIPELINE_WORKERS=6
 
