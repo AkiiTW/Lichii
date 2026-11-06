@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <deque>
 #include <filesystem>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
@@ -180,6 +181,22 @@ private:
     EmissionBudget emission_budget;
 
     GraphicsPipelineCacheKey graphics_key{};
+    /// graphics_key's attribute_types as the last Refresh left them, before normalization:
+    /// Refresh only rewrites them when the vertex input is dirty.
+    u64 raw_attribute_types{};
+
+    /// Vertex attribute types only matter for the attributes the vertex shaders read. Per pair
+    /// of vertex shader hashes, the 2-bit attribute type mask of the generics they read (union
+    /// over every build), so keys differing only in unread attributes share one pipeline.
+    u64 RecordAttributeMask(const GraphicsPipelineCacheKey& key, u64 program_mask);
+    void NormalizeVertexInputKey(GraphicsPipelineCacheKey& key);
+    std::mutex attribute_masks_mutex;
+    std::map<std::pair<u64, u64>, u64> attribute_masks;
+    std::atomic<u64> attribute_masks_generation{};
+    std::array<u64, 2> mask_cache_hashes{};
+    u64 mask_cache_generation{~u64{0}};
+    u64 mask_cache_value{~u64{0}};
+    std::atomic<size_t> merged_disk_pipelines{};
     GraphicsPipeline* current_pipeline{};
 
     /// Destroys graphics pipelines unused for a while, once the GPU is done with them.
