@@ -564,3 +564,9 @@ if (LICHII_PGO_GENERATE_GPU)
     target_compile_options(video_core PRIVATE -fprofile-generate)
     # shader_recompiler is instrumented in its own CMakeLists.txt (added after this one).
 endif()
+
+# vk_host_pacer.cpp reads the compositor's timing (DwmGetCompositionTimingInfo); MSVC links it
+# through a #pragma, MinGW needs the library named.
+if (WIN32)
+    target_link_libraries(video_core PRIVATE dwmapi)
+endif()
