@@ -274,3 +274,8 @@ else()
 endif()
 
 create_target_directory_groups(shader_recompiler)
+
+# lichii-tuned's pgogen flavor: see LICHII_PGO_GENERATE_GPU in src/video_core/CMakeLists.txt.
+if (LICHII_PGO_GENERATE_GPU)
+    target_compile_options(shader_recompiler PRIVATE -fprofile-generate)
+endif()

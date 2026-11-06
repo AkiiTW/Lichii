@@ -577,5 +577,5 @@ create_target_directory_groups(video_core)
 option(LICHII_PGO_GENERATE_GPU "Instrument video_core and shader_recompiler for PGO" OFF)
 if (LICHII_PGO_GENERATE_GPU)
     target_compile_options(video_core PRIVATE -fprofile-generate)
-    target_compile_options(shader_recompiler PRIVATE -fprofile-generate)
+    # shader_recompiler is instrumented in its own CMakeLists.txt (added after this one).
 endif()
