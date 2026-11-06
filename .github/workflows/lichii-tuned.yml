@@ -38,7 +38,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flavor: [normal, lto, pgogen]
+        # lto stays out of the matrix: the ThinLTO + PGO binary broke Ocarina at boot (guest
+        # abort 12 s in, read of 0x2) where the same commit's normal build ran.
+        flavor: [normal, pgogen]
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 3000M
