@@ -464,6 +464,9 @@ void DmaPusher::CallMethod(u32 argument) {
             dma_state.subchannel,
             dma_state.method_count,
         });
+        if (split.Active()) {
+            split.NoteMemoryWriter(); // semaphore releases
+        }
     } else {
         auto subchannel = subchannels[dma_state.subchannel];
         if (subchannel == nullptr) {
@@ -473,9 +476,16 @@ void DmaPusher::CallMethod(u32 argument) {
         const auto engine_type = subchannel_type[dma_state.subchannel];
         const bool writer = split.Active() &&
                             IsMemoryWriter(*subchannel, engine_type, dma_state.method);
+        // Engines whose writes to guest memory the 3D front does not track (macro DMA reads).
+        const bool memory_writer = split.Active() &&
+                                   (writer || (engine_type != Engines::EngineTypes::Maxwell3D &&
+                                               engine_type != Engines::EngineTypes::KeplerCompute));
         SCOPE_EXIT {
             if (writer) {
                 split.NoteWriter();
+            }
+            if (memory_writer) {
+                split.NoteMemoryWriter();
             }
         };
         if (split.Active()) {
@@ -522,6 +532,9 @@ void DmaPusher::CallMultiMethod(const u32* base_start, u32 num_methods) {
     auto& split = VideoCommon::GpuSplit::Get();
     if (dma_state.method < non_puller_methods) {
         puller.CallMultiMethod(*this, dma_state.method, dma_state.subchannel, base_start, num_methods, dma_state.method_count);
+        if (split.Active()) {
+            split.NoteMemoryWriter(); // semaphore releases
+        }
     } else {
         auto subchannel = subchannels[dma_state.subchannel];
         if (subchannel == nullptr) {
@@ -531,9 +544,16 @@ void DmaPusher::CallMultiMethod(const u32* base_start, u32 num_methods) {
         const auto engine_type = subchannel_type[dma_state.subchannel];
         const bool writer = split.Active() &&
                             IsMemoryWriter(*subchannel, engine_type, dma_state.method);
+        // Engines whose writes to guest memory the 3D front does not track (macro DMA reads).
+        const bool memory_writer = split.Active() &&
+                                   (writer || (engine_type != Engines::EngineTypes::Maxwell3D &&
+                                               engine_type != Engines::EngineTypes::KeplerCompute));
         SCOPE_EXIT {
             if (writer) {
                 split.NoteWriter();
+            }
+            if (memory_writer) {
+                split.NoteMemoryWriter();
             }
         };
         if (split.Active()) {

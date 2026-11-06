@@ -165,6 +165,22 @@ public:
     /// Waits until the back executed the compute and copy work sent so far (not what came after).
     /// Returns whether any of it was still queued.
     bool WaitForWriters();
+    /// Work that writes guest memory itself on the back (copies, compute, I2M, semaphores) was
+    /// just sent, at an address the front does not track.
+    void NoteMemoryWriter() {
+        last_memory_writer_position = write_position;
+    }
+    u64 LastMemoryWriterPosition() const {
+        return last_memory_writer_position;
+    }
+    /// Where the next entry goes: the position the back has consumed once it ran what was sent.
+    u64 WritePosition() const {
+        return write_position;
+    }
+    /// Waits until the back consumed `target` (at most what was sent). Returns whether it had not.
+    bool WaitForPosition(u64 target, DrainSite site) {
+        return WaitFor(std::min(target, write_position), site);
+    }
     /// A host-level wait was just sent (a syncpoint acquire, a host WFI, a GP entry with its sync
     /// bit; semaphore acquires drain): the guest's GPU work before it is complete before the
     /// commands after it are fetched.
@@ -246,6 +262,7 @@ private:
     // Front side.
     u64 write_position{};
     u64 last_writer_position{};
+    u64 last_memory_writer_position{};
     u64 last_sync_position{};
     u64 published_local{};
     u64 consumed_cache{};
