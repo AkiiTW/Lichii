@@ -159,6 +159,11 @@ jobs:
           fi
           if [ '${{ matrix.flavor }}' = 'pgogen' ]; then
             linker="$linker -fprofile-generate"
+          else
+            # Line tables in a lichii.pdb beside the exe: EDEN_NX2_SAMPLE_PROFILE's samples are
+            # symbolized with tools/nx2/sample_report.py (llvm-symbolizer reads the PDB).
+            profile="$profile -gcodeview -gline-tables-only"
+            linker="$linker -Wl,--pdb="
           fi
           cmake -S . -B build/release -G Ninja "${lto[@]}" \
             -DCMAKE_BUILD_TYPE=Release \

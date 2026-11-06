@@ -84,6 +84,9 @@ constexpr size_t MaxDepth = 32;
 struct SampledThread {
     HANDLE handle{};
     std::string name;
+    /// The thread's whole stack reservation: the walk stops at a stack pointer outside it.
+    std::uint64_t stack_low{};
+    std::uint64_t stack_high{};
 };
 
 std::mutex threads_mutex;
@@ -124,8 +127,13 @@ void WriteModules(std::ofstream& file) {
 
 /// Unwinds a suspended thread's stack. Allocates nothing: the thread may hold the heap lock.
 size_t WalkUnguarded(CONTEXT& context, std::array<std::uint64_t, MaxDepth>& frames,
-                     size_t& depth) {
-    while (depth < MaxDepth && context.Rip != 0) {
+                     size_t& depth, std::uint64_t stack_low, std::uint64_t stack_high) {
+    // Without SEH (MinGW builds have no __try) every stack read must stay in the thread's stack:
+    // driver or JIT code can leave a garbage stack pointer that faulted inside ntdll.
+    const auto on_stack = [&](std::uint64_t rsp) {
+        return stack_high == 0 || (rsp >= stack_low && rsp + sizeof(DWORD64) <= stack_high);
+    };
+    while (depth < MaxDepth && context.Rip != 0 && on_stack(context.Rsp)) {
         frames[depth++] = context.Rip;
         DWORD64 image_base{};
         const PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &image_base, nullptr);
@@ -150,15 +158,16 @@ size_t WalkUnguarded(CONTEXT& context, std::array<std::uint64_t, MaxDepth>& fram
 /// A thread stopped in driver or JIT code can leave the unwinder a garbage stack pointer: it then
 /// faults inside ntdll and took the whole emulator down (twice in Ocarina of Time sessions). Keep
 /// the frames found up to the fault instead.
-size_t Walk(CONTEXT& context, std::array<std::uint64_t, MaxDepth>& frames) {
+size_t Walk(CONTEXT& context, std::array<std::uint64_t, MaxDepth>& frames,
+            const SampledThread& thread) {
     size_t depth = 0;
 #ifdef _MSC_VER
     __try {
-        WalkUnguarded(context, frames, depth);
+        WalkUnguarded(context, frames, depth, thread.stack_low, thread.stack_high);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
     }
 #else
-    WalkUnguarded(context, frames, depth);
+    WalkUnguarded(context, frames, depth, thread.stack_low, thread.stack_high);
 #endif
     return depth;
 }
@@ -208,7 +217,8 @@ void SamplerMain() {
             }
             alignas(16) CONTEXT context{};
             context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-            const size_t depth = GetThreadContext(thread, &context) ? Walk(context, frames) : 0;
+            const size_t depth =
+                GetThreadContext(thread, &context) ? Walk(context, frames, sampled_threads[index]) : 0;
             ResumeThread(thread);
             if (depth == 0) {
                 continue;
@@ -265,7 +275,11 @@ void OnThreadNamed(const char* name) {
             CloseHandle(handle);
             return;
         }
-        sampled_threads[index] = {handle, name};
+        ULONG_PTR stack_low{};
+        ULONG_PTR stack_high{};
+        GetCurrentThreadStackLimits(&stack_low, &stack_high);
+        sampled_threads[index] = {handle, name, static_cast<std::uint64_t>(stack_low),
+                                  static_cast<std::uint64_t>(stack_high)};
         num_threads.store(index + 1, std::memory_order_release);
     }
     static std::once_flag started;
