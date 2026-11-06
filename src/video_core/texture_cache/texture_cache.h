@@ -260,7 +260,16 @@ void TextureCache<P>::ApplyThresholdOverrides(bool log) {
     // On every GPU: past what a frame needs, more device memory only keeps the textures of earlier
     // scenes (title 1 filled 6.7 GB of an 8 GB card and draws its races in ~5 GB), so collect from
     // MaxCriticalMemory on rather than near the card's budget.
-    critical_memory = (std::min)(critical_memory, MaxCriticalMemory);
+    // EDEN_NX2_TC_NO_CAP=1: Switch 2 titles follow the driver's budget (less its margins) without
+    // the cap. Ocarina's village alone keeps ~8.5 GiB of images: under the cap, every camera turn
+    // evicted half of it and uploaded it again (2.5-3.5 GiB per 20 s).
+    static const bool no_cap = [] {
+        const char* value = std::getenv("EDEN_NX2_TC_NO_CAP");
+        return value != nullptr && value[0] == '1';
+    }();
+    if (!no_cap || !native_thresholds_applied) {
+        critical_memory = (std::min)(critical_memory, MaxCriticalMemory);
+    }
     expected_memory =
         (std::min)(expected_memory, critical_memory - (std::min)(critical_memory, u64{768_MiB}));
     minimum_memory =
@@ -358,8 +367,10 @@ void TextureCache<P>::TickFrame() {
                     ApplyThresholdOverrides(log);
                     if (log) {
                         LOG_INFO(HW_GPU,
-                                 "Memory margins: base {} MiB, out of memory {} MiB, block slack {} MiB",
-                                 margin >> 20, pressure_margin >> 20, slack_margin >> 20);
+                                 "Memory margins: budget {} MiB, base {} MiB, out of memory {} MiB, "
+                                 "block slack {} MiB",
+                                 budget >> 20, margin >> 20, pressure_margin >> 20,
+                                 slack_margin >> 20);
                     }
                 }
             }
