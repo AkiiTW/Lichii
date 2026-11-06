@@ -1013,6 +1013,7 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     used_pipelines_saved = std::chrono::steady_clock::now();
     size_t skipped_pipelines = 0;
     size_t deferred_pipelines = 0;
+    size_t other_driver_versions = 0;
     size_t queued_graphics = 0;
 
     if (use_vulkan_pipeline_cache) {
@@ -1094,6 +1095,15 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
             return;
         }
 
+        // A cache shared by another player was written under their driver version: the key's
+        // driver fields only tell pipelines apart (the SPIR-V and the pipeline are made for this
+        // device either way), so with the same driver the entry is filed under this version and
+        // draws find it.
+        if (key.state.driver_id == dynamic_features.driver_id &&
+            key.state.driver_version != dynamic_features.driver_version) {
+            key.state.driver_version = dynamic_features.driver_version;
+            ++other_driver_versions;
+        }
         const u64 hash = key.Hash();
         if (!disk_pipelines.insert(hash).second) {
             return;
@@ -1161,6 +1171,10 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
                                load_graphics);
 
     LOG_INFO(Render_Vulkan, "Total Pipeline Count: {}", state.total);
+    if (other_driver_versions != 0) {
+        LOG_INFO(Render_Vulkan, "{} cached graphics pipelines came from another driver version",
+                 other_driver_versions);
+    }
     if (skipped_pipelines != 0) {
         LOG_INFO(
             Render_Vulkan,
