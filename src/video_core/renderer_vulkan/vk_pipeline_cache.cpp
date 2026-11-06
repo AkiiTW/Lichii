@@ -13,11 +13,13 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <ranges>
 #include <span>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 #include <bit>
 #include <cstring>
@@ -1018,6 +1020,95 @@ PipelineCache::~PipelineCache() {
     evicted_pipelines.clear();
 }
 
+namespace {
+// EDEN_NX2_PIPELINE_DIFF=1: for a new graphics pipeline whose shaders an earlier one uses too,
+// log which parts of the fixed state differ from that one (finds state that splits the same
+// draws into many pipelines, each translated on the GPU thread).
+bool PipelineDiffEnabled() {
+    static const bool enabled = std::getenv("EDEN_NX2_PIPELINE_DIFF") != nullptr;
+    return enabled;
+}
+
+struct KnownPipelineKey {
+    GraphicsPipelineCacheKey key;
+    bool from_disk;
+};
+
+std::mutex known_keys_mutex;
+std::unordered_map<u64, KnownPipelineKey> known_keys_by_shaders;
+
+u64 ShadersHash(const GraphicsPipelineCacheKey& key) {
+    return Common::CityHash64(reinterpret_cast<const char*>(key.unique_hashes.data()),
+                              sizeof(key.unique_hashes));
+}
+
+/// Keys read from the disk cache are the reference for the first pipeline the session builds
+/// with the same shaders: a key that differs there shows what keeps the cache from covering it.
+void RememberCachedPipelineKey(const GraphicsPipelineCacheKey& key) {
+    if (!PipelineDiffEnabled()) {
+        return;
+    }
+    std::scoped_lock lock{known_keys_mutex};
+    known_keys_by_shaders.try_emplace(ShadersHash(key), KnownPipelineKey{key, true});
+}
+
+void ReportNewPipelineKey(const GraphicsPipelineCacheKey& key) {
+    if (!PipelineDiffEnabled()) {
+        return;
+    }
+    static u32 logged{};
+    static u32 unknown_shaders{};
+    const u64 shaders = ShadersHash(key);
+    std::scoped_lock lock{known_keys_mutex};
+    const auto [it, first] =
+        known_keys_by_shaders.try_emplace(shaders, KnownPipelineKey{key, false});
+    if (first) {
+        if (logged++ < 400) {
+            LOG_INFO(Render_Vulkan, "New pipeline with shaders {:016x} not in the disk cache "
+                     "({} so far)", shaders, ++unknown_shaders);
+        }
+        return;
+    }
+    const bool against_disk = it->second.from_disk;
+    const FixedPipelineState& now = key.state;
+    const FixedPipelineState& before = it->second.key.state;
+    std::string diffs;
+    if (now.raw1 != before.raw1) diffs += fmt::format(" raw1^{:#x}", now.raw1 ^ before.raw1);
+    if (now.raw2 != before.raw2) diffs += fmt::format(" raw2^{:#x}", now.raw2 ^ before.raw2);
+    if (now.color_formats != before.color_formats) {
+        diffs += fmt::format(" color_formats {:02x} -> {:02x}", fmt::join(before.color_formats, ""),
+                             fmt::join(now.color_formats, ""));
+    }
+    if (now.alpha_test_ref != before.alpha_test_ref) {
+        diffs += fmt::format(" alpha_test_ref {:#x} -> {:#x} (func {})", before.alpha_test_ref,
+                             now.alpha_test_ref, now.alpha_test_func.Value());
+    }
+    if (now.point_size != before.point_size) {
+        diffs += fmt::format(" point_size {:#x} -> {:#x}", before.point_size, now.point_size);
+    }
+    if (now.viewport_swizzles != before.viewport_swizzles) diffs += " viewport_swizzles";
+    if (now.attribute_types != before.attribute_types) {
+        diffs += fmt::format(" attribute_types^{:#x}", now.attribute_types ^ before.attribute_types);
+    }
+    if (std::memcmp(&now.dynamic_state, &before.dynamic_state, sizeof(now.dynamic_state)) != 0) {
+        diffs += " dynamic_state";
+    }
+    if (now.driver_id != before.driver_id || now.driver_version != before.driver_version) {
+        diffs += " driver";
+    }
+    const size_t size = now.Size();
+    if (diffs.empty() && size > offsetof(FixedPipelineState, attachments)) {
+        diffs = fmt::format(" past attachments (key size {})", size);
+    }
+    it->second = KnownPipelineKey{key, false};
+    if (logged++ < 400) {
+        LOG_INFO(Render_Vulkan, "New pipeline for known shaders {:016x} ({}) differs in:{}", shaders,
+                 against_disk ? "vs the disk cache" : "vs this session",
+                 diffs.empty() ? std::string{" nothing in the key prefix"} : diffs);
+    }
+}
+} // Anonymous namespace
+
 void PipelineCache::SaveUsedPipelines() {
     used_pipelines_saved = std::chrono::steady_clock::now();
     // A session too short to say what the game uses (a boot to the menu) keeps the old list.
@@ -1693,7 +1784,10 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     }};
     const auto queue_graphics{[&](const GraphicsPipelineCacheKey& key, GraphicsRecords records) {
         const u64 hash = key.Hash();
-        disk_pipelines.insert(hash);
+        if (!disk_pipelines.insert(hash).second) {
+            return;
+        }
+        RememberCachedPipelineKey(key);
         if (!PreloadAllPipelines() &&
             (used_pipelines.empty() ? queued_graphics >= MaxPipelinesWithoutUsedList
                                     : !used_pipelines.contains(hash))) {
@@ -1845,61 +1939,6 @@ void PipelineCache::QueueVulkanPipelineCacheFlush() {
         flush_in_flight.store(false, std::memory_order_release);
     });
 }
-
-namespace {
-// EDEN_NX2_PIPELINE_DIFF=1: for a new graphics pipeline whose shaders an earlier one uses too,
-// log which parts of the fixed state differ from that one (finds state that splits the same
-// draws into many pipelines, each translated on the GPU thread).
-void ReportNewPipelineKey(const GraphicsPipelineCacheKey& key) {
-    static const bool enabled = std::getenv("EDEN_NX2_PIPELINE_DIFF") != nullptr;
-    if (!enabled) {
-        return;
-    }
-    static std::unordered_map<u64, GraphicsPipelineCacheKey> last_by_shaders;
-    static u32 logged{};
-    const u64 shaders = Common::CityHash64(reinterpret_cast<const char*>(key.unique_hashes.data()),
-                                           sizeof(key.unique_hashes));
-    const auto [it, first] = last_by_shaders.try_emplace(shaders, key);
-    if (first) {
-        return;
-    }
-    const FixedPipelineState& now = key.state;
-    const FixedPipelineState& before = it->second.state;
-    std::string diffs;
-    if (now.raw1 != before.raw1) diffs += fmt::format(" raw1^{:#x}", now.raw1 ^ before.raw1);
-    if (now.raw2 != before.raw2) diffs += fmt::format(" raw2^{:#x}", now.raw2 ^ before.raw2);
-    if (now.color_formats != before.color_formats) {
-        diffs += fmt::format(" color_formats {:02x} -> {:02x}", fmt::join(before.color_formats, ""),
-                             fmt::join(now.color_formats, ""));
-    }
-    if (now.alpha_test_ref != before.alpha_test_ref) {
-        diffs += fmt::format(" alpha_test_ref {:#x} -> {:#x} (func {})", before.alpha_test_ref,
-                             now.alpha_test_ref, now.alpha_test_func.Value());
-    }
-    if (now.point_size != before.point_size) {
-        diffs += fmt::format(" point_size {:#x} -> {:#x}", before.point_size, now.point_size);
-    }
-    if (now.viewport_swizzles != before.viewport_swizzles) diffs += " viewport_swizzles";
-    if (now.attribute_types != before.attribute_types) {
-        diffs += fmt::format(" attribute_types^{:#x}", now.attribute_types ^ before.attribute_types);
-    }
-    if (std::memcmp(&now.dynamic_state, &before.dynamic_state, sizeof(now.dynamic_state)) != 0) {
-        diffs += " dynamic_state";
-    }
-    if (now.driver_id != before.driver_id || now.driver_version != before.driver_version) {
-        diffs += " driver";
-    }
-    const size_t size = now.Size();
-    if (diffs.empty() && size > offsetof(FixedPipelineState, attachments)) {
-        diffs = fmt::format(" past attachments (key size {})", size);
-    }
-    it->second = key;
-    if (logged++ < 400) {
-        LOG_INFO(Render_Vulkan, "New pipeline for known shaders {:016x} differs in:{}", shaders,
-                 diffs.empty() ? std::string{" nothing in the key prefix"} : diffs);
-    }
-}
-} // Anonymous namespace
 
 GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
     const auto [pair, is_new]{graphics_cache.try_emplace(graphics_key)};
