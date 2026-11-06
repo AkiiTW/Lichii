@@ -14,6 +14,9 @@
 // EDEN_NX2_PLACEMENT_DOMAIN=<n> picks the L3 domain for the GPU threads (default: the last one,
 // away from CPU 0 and its interrupts). EDEN_NX2_PLACEMENT_GPU=<hex mask> sets the GPU threads'
 // logical processors by hand (processor group 0), the rest gets the complement.
+// EDEN_NX2_PLACEMENT_CORES=0 lets the three GPU threads share the domain; by default the front
+// and the back each get a physical core (both SMT siblings) and VulkanWorker the others, so a
+// spinning front never takes execution resources from the back.
 namespace Common::Nx2Placement {
 
 enum class Role {

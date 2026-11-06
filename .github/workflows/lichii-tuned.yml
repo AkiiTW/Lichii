@@ -1,8 +1,14 @@
 name: lichii-tuned
 
-# Windows build tuned for one CPU family: MSYS2 clang with the repo's PGO profile (as the
-# windows-x86_64-pgo release job), plus -march/-mtune from YUZU_BUILD_PRESET and, in the second
-# job, ThinLTO. Manual runs only; the two binaries are uploaded as artifacts, no release is made.
+# Windows build tuned for one CPU family: MSYS2 clang with a PGO profile, plus -march/-mtune from
+# YUZU_BUILD_PRESET. Three flavors, uploaded as artifacts (no release is made):
+#   normal  the PGO build;
+#   lto     the same with ThinLTO;
+#   pgogen  an instrumented build (-fprofile-generate) that writes default_*.profraw next to
+#           lichii.exe when it exits normally.
+# Profiles: .profraw files (or .zip archives of them) committed under pgo/ are merged into the
+# profile the normal and lto flavors use, weighted over eglantine.profdata; without them,
+# eglantine.profdata alone is used.
 on:
   workflow_dispatch:
     inputs:
@@ -19,6 +25,7 @@ on:
       - "src/**"
       - "CMakeLists.txt"
       - "dist/**"
+      - "pgo/**"
       - ".github/workflows/lichii-tuned.yml"
 
 permissions:
@@ -26,13 +33,13 @@ permissions:
 
 jobs:
   build:
-    name: windows ${{ inputs.preset || 'zen2' }}${{ matrix.lto && ' + LTO' || '' }}
+    name: windows ${{ inputs.preset || 'zen2' }} ${{ matrix.flavor }}
     runs-on: windows-2022
     timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
-        lto: [false, true]
+        flavor: [normal, lto, pgogen]
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 3000M
@@ -52,9 +59,9 @@ jobs:
           update: true
           cache: true
           install: >-
-            git make autoconf libtool automake-wrapper patch jq pactoys ninja
+            git make autoconf libtool automake-wrapper patch jq pactoys ninja unzip
           pacboy: >-
-            toolchain:p clang:p lld:p cmake:p python-pip:p
+            toolchain:p clang:p lld:p cmake:p python-pip:p compiler-rt:p llvm-tools:p
             qt6-base:p qt6-charts:p qt6-tools:p qt6-translations:p qt6-svg:p
             openssl:p boost:p fmt:p lz4:p nlohmann-json:p zlib:p zstd:p libiconv:p
             vulkan-memory-allocator:p vulkan-devel:p glslang:p enet:p opus:p
@@ -75,24 +82,83 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .ccache
-          key: objects-tuned-${{ inputs.preset || 'zen2' }}-${{ matrix.lto }}-${{ github.sha }}-${{ github.run_id }}
+          key: objects-tuned-${{ inputs.preset || 'zen2' }}-${{ matrix.flavor }}-${{ github.sha }}-${{ github.run_id }}
           restore-keys: |
-            objects-tuned-${{ inputs.preset || 'zen2' }}-${{ matrix.lto }}-
+            objects-tuned-${{ inputs.preset || 'zen2' }}-${{ matrix.flavor }}-
+
+      # The profile runtime must link and its output must merge before an hour of instrumented
+      # build. MSYS2 may ship compiler-rt for another clang version than the compiler: its
+      # library is then copied where this clang looks for it.
+      - name: Check the profile runtime
+        if: matrix.flavor == 'pgogen'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd "$(mktemp -d)"
+          printf 'int main(void) { return 0; }\n' > t.c
+          if ! clang -fprofile-generate -fuse-ld=lld t.c -o t.exe; then
+            lib=$(ls /ucrt64/lib/clang/*/lib/windows/libclang_rt.profile-x86_64.a | head -n 1)
+            dir=$(clang -print-runtime-dir)
+            echo "Copying $lib to $dir"
+            mkdir -p "$dir" "$(clang -print-resource-dir)/lib/windows"
+            cp "$lib" "$dir/libclang_rt.profile.a"
+            cp "$lib" "$dir/libclang_rt.profile-x86_64.a"
+            cp "$lib" "$(clang -print-resource-dir)/lib/windows/libclang_rt.profile-x86_64.a"
+            clang -fprofile-generate -fuse-ld=lld t.c -o t.exe
+          fi
+          ./t.exe
+          ls -la ./*.profraw
+          llvm-profdata merge -o t.profdata ./*.profraw
+          llvm-profdata show t.profdata | head -n 5
+
+      - name: Merge the Ocarina profile
+        if: matrix.flavor != 'pgogen'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          mkdir -p build/pgo
+          for archive in pgo/*.zip; do
+            unzip -o -q -d build/pgo "$archive"
+          done
+          raws=(pgo/*.profraw build/pgo/**/*.profraw)
+          if [ ${#raws[@]} -eq 0 ]; then
+            echo "No profile under pgo/: eglantine.profdata only"
+            cp eglantine.profdata build/use.profdata
+            exit 0
+          fi
+          echo "Ocarina profile from ${#raws[@]} file(s)"
+          weighted=()
+          for raw in "${raws[@]}"; do
+            weighted+=("--weighted-input=4,$raw")
+          done
+          if ! llvm-profdata merge -o build/use.profdata "${weighted[@]}" eglantine.profdata; then
+            echo "eglantine.profdata did not merge: the Ocarina profile alone"
+            llvm-profdata merge -o build/use.profdata "${raws[@]}"
+          fi
+          llvm-profdata show build/use.profdata | head -n 5
 
       - name: Configure
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          profile="-fprofile-use=$(cygpath -m "$PWD/eglantine.profdata") -Wno-backend-plugin \
-            -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
+          if [ '${{ matrix.flavor }}' = 'pgogen' ]; then
+            profile="-fprofile-generate"
+          else
+            profile="-fprofile-use=$(cygpath -m "$PWD/build/use.profdata") -Wno-backend-plugin \
+              -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
+          fi
           # CMake's IPO check fails under MSYS2 clang (UseLTO.cmake stops the configure), so
           # ThinLTO goes in the flags directly, with LLVM's archiver for the bitcode objects.
           lto=()
           linker="-fuse-ld=lld"
-          if [ '${{ matrix.lto }}' = 'true' ]; then
+          if [ '${{ matrix.flavor }}' = 'lto' ]; then
             profile="$profile -flto=thin"
             linker="$linker -flto=thin"
             lto=(-DCMAKE_AR=/ucrt64/bin/llvm-ar.exe -DCMAKE_RANLIB=/ucrt64/bin/llvm-ranlib.exe)
+          fi
+          if [ '${{ matrix.flavor }}' = 'pgogen' ]; then
+            linker="$linker -fprofile-generate"
           fi
           cmake -S . -B build/release -G Ninja "${lto[@]}" \
             -DCMAKE_BUILD_TYPE=Release \
@@ -167,7 +233,7 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v7
         with:
-          name: lichii-windows-${{ inputs.preset || 'zen2' }}${{ matrix.lto && '-lto' || '' }}-${{ github.sha }}
+          name: lichii-windows-${{ inputs.preset || 'zen2' }}-${{ matrix.flavor }}-${{ github.sha }}
           path: build/release/bin/
           if-no-files-found: error
           retention-days: 14
