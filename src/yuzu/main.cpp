@@ -147,8 +147,9 @@ constexpr std::pair<const char*, const char*> BuiltinSwitches[] = {
     {"EDEN_NX2_ACQUIRE_PRECHECK", "2"},   {"EDEN_NX2_MACRO_SINK", "1"},
     {"EDEN_NX2_COMPUTE_SINK", "1"},       {"EDEN_NX2_RING_PAIRS", "1"},
     {"EDEN_NX2_UBO_INPLACE", "1"},        {"EDEN_NX2_PIPELINE_CLEAN", "1"},
-    {"EDEN_NX2_LIST_WAIT_SKIP", "1"},     {"EDEN_NX2_PREFLUSH", "1"},
-    {"EDEN_NX2_SEM_FAST", "2"},
+    {"EDEN_NX2_LIST_WAIT_SKIP", "1"},     {"EDEN_NX2_SEM_FAST", "2"},
+    // Not EDEN_NX2_PREFLUSH=1: one-frame white flashes over the whole screen in Ocarina's forest
+    // paths (3 in 12 s with it, none without), as buffer_cache.h already notes.
 };
 
 static void LoadNx2Switches(const char* argv0) {
