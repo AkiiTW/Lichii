@@ -34,6 +34,11 @@ struct Plan {
     Mode mode{Mode::Off};
     u64 gpu{};
     u64 rest{};
+    /// With EDEN_NX2_PLACEMENT_CORES (default on): the GPU front and back each get a physical
+    /// core of the GPU domain to themselves, VulkanWorker the domain's other cores.
+    u64 front{};
+    u64 back{};
+    u64 worker{};
 };
 
 #ifdef _WIN32
@@ -63,6 +68,33 @@ std::vector<u64> QueryDomains() {
         offset += info->Size;
     }
     return domains;
+}
+
+std::vector<u64> QueryCores() {
+    DWORD length = 0;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &length);
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || length == 0) {
+        return {};
+    }
+    std::vector<u8> buffer(length);
+    auto* const first = reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buffer.data());
+    if (!GetLogicalProcessorInformationEx(RelationProcessorCore, first, &length)) {
+        return {};
+    }
+    std::vector<u64> cores;
+    for (DWORD offset = 0; offset < length;) {
+        const auto* const info =
+            reinterpret_cast<const SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buffer.data() + offset);
+        if (info->Size == 0) {
+            break;
+        }
+        if (info->Relationship == RelationProcessorCore && info->Processor.GroupCount >= 1 &&
+            info->Processor.GroupMask[0].Group == 0 && info->Processor.GroupMask[0].Mask != 0) {
+            cores.push_back(static_cast<u64>(info->Processor.GroupMask[0].Mask));
+        }
+        offset += info->Size;
+    }
+    return cores;
 }
 
 u64 ProcessMask() {
@@ -118,6 +150,22 @@ std::vector<u64> QueryDomains() {
     return {unique.begin(), unique.end()};
 }
 
+std::vector<u64> QueryCores() {
+    std::set<u64> unique;
+    for (int cpu = 0; cpu < 64; ++cpu) {
+        std::ifstream file{"/sys/devices/system/cpu/cpu" + std::to_string(cpu) +
+                          "/topology/thread_siblings_list"};
+        std::string list;
+        if (!std::getline(file, list)) {
+            continue;
+        }
+        if (const u64 mask = ParseCpuList(list); mask != 0) {
+            unique.insert(mask);
+        }
+    }
+    return {unique.begin(), unique.end()};
+}
+
 u64 ProcessMask() {
     cpu_set_t set;
     CPU_ZERO(&set);
@@ -145,6 +193,9 @@ bool SetMask(u64 mask) {
 }
 #else
 std::vector<u64> QueryDomains() {
+    return {};
+}
+std::vector<u64> QueryCores() {
     return {};
 }
 u64 ProcessMask() {
@@ -208,8 +259,29 @@ Plan MakePlan() {
         plan.mode = Mode::Off;
         return plan;
     }
-    LOG_INFO(Common, "Nx2Placement: mode={} gpu={:#x} rest={:#x}",
-             plan.mode == Mode::Gpu ? "gpu" : "split", plan.gpu, plan.rest);
+    plan.front = plan.back = plan.worker = plan.gpu;
+    const char* const per_core = std::getenv("EDEN_NX2_PLACEMENT_CORES");
+    if (per_core == nullptr || per_core[0] != '0') {
+        std::vector<u64> cores;
+        for (const u64 core : QueryCores()) {
+            if ((core & plan.gpu) == core) {
+                cores.push_back(core);
+            }
+        }
+        if (cores.size() >= 2) {
+            plan.front = cores[0];
+            plan.back = cores[1];
+            u64 others = 0;
+            for (size_t i = 2; i < cores.size(); ++i) {
+                others |= cores[i];
+            }
+            // Two cores only: VulkanWorker shares them (its load is the smallest of the three).
+            plan.worker = others != 0 ? others : plan.gpu;
+        }
+    }
+    LOG_INFO(Common, "Nx2Placement: mode={} gpu={:#x} rest={:#x} front={:#x} back={:#x} worker={:#x}",
+             plan.mode == Mode::Gpu ? "gpu" : "split", plan.gpu, plan.rest, plan.front, plan.back,
+             plan.worker);
     return plan;
 }
 
@@ -244,9 +316,13 @@ void Apply(Role role) {
     u64 mask = 0;
     switch (role) {
     case Role::GpuFront:
+        mask = plan.front;
+        break;
     case Role::GpuBack:
+        mask = plan.back;
+        break;
     case Role::VulkanWorker:
-        mask = plan.gpu;
+        mask = plan.worker;
         break;
     case Role::GuestCore:
     case Role::Background:
