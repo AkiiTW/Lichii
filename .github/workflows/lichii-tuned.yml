@@ -21,6 +21,7 @@ on:
   push:
     branches:
       - claude/oot-zen2
+      - claude/v3-zen2
     paths:
       - "src/**"
       - "CMakeLists.txt"
