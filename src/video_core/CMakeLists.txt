@@ -555,3 +555,12 @@ if (ENABLE_NVIDIA_DLSS)
 endif()
 
 create_target_directory_groups(video_core)
+
+# Instrumented build for a GPU-side PGO profile (lichii-tuned's pgogen flavor): only the GPU
+# emulation is instrumented, so the guest CPU, the services and the loader run at full speed.
+# The whole-program instrumented build never got past the boot of Ocarina of Time.
+option(LICHII_PGO_GENERATE_GPU "Instrument video_core and shader_recompiler for PGO" OFF)
+if (LICHII_PGO_GENERATE_GPU)
+    target_compile_options(video_core PRIVATE -fprofile-generate)
+    target_compile_options(shader_recompiler PRIVATE -fprofile-generate)
+endif()
