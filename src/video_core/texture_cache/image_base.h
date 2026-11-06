@@ -127,6 +127,7 @@ struct ImageBase {
     VAddr cpu_addr_end = 0;
 
     u64 modification_tick = 0;
+    u32 upload_count = 0; ///< Contents uploaded from guest memory so far (EDEN_NX2_TC_LOG)
     size_t lru_index = SIZE_MAX;
 
     std::array<u32, MAX_MIP_LEVELS> mip_level_offsets{};

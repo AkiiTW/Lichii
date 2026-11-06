@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <deque>
 #include <limits>
@@ -132,6 +133,16 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     u64 uploaded_bytes{};    ///< Guest bytes those uploads read
     u64 largest_upload{};    ///< Largest of them
     u64 layer_uploads{};     ///< Of them, uploads of only the written layers
+    u64 upload_ns{};         ///< GPU thread time in RefreshContents (EDEN_NX2_TC_LOG)
+    u64 reuploads{};         ///< Uploads of images uploaded before (guest wrote them again)
+    u64 reupload_bytes{};
+    struct LargeUpload {
+        u64 bytes;
+        u64 ns;
+        u32 width, height, layers, levels, format;
+        bool reupload;
+    };
+    std::array<LargeUpload, 6> largest_uploads{}; ///< Largest uploads of the window
     bool native_thresholds_applied{};
     u64 native_critical_memory{};
     u64 native_expected_memory{};

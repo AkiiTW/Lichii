@@ -14,6 +14,7 @@
 #include <vector>
 #include <optional>
 #include <bit>
+#include <chrono>
 #include "common/container/unordered_map.h"
 #include <boost/container/small_vector.hpp>
 
@@ -443,6 +444,22 @@ void TextureCache<P>::TickFrame() {
                  async_decodes_queued, astc_opaque_images, astc_alpha_images);
         LOG_INFO(HW_GPU, "Texture cache last 600 frames: {} uploads from guest memory, {} MiB (largest {} MiB, {} by layer)",
                  images_uploaded, uploaded_bytes >> 20, largest_upload >> 20, layer_uploads);
+        LOG_INFO(HW_GPU, "Texture cache last 600 frames: {:.1f} ms uploading on the GPU thread, {} "
+                 "re-uploads ({} MiB) of images the guest wrote again",
+                 static_cast<double>(upload_ns) / 1e6, reuploads, reupload_bytes >> 20);
+        std::sort(largest_uploads.begin(), largest_uploads.end(),
+                  [](const LargeUpload& a, const LargeUpload& b) { return a.ns > b.ns; });
+        for (const LargeUpload& upload : largest_uploads) {
+            if (upload.ns == 0) {
+                continue;
+            }
+            LOG_INFO(HW_GPU, "  slowest upload {:.1f} ms: {} KiB {}x{} layers {} levels {} format {}{}",
+                     static_cast<double>(upload.ns) / 1e6, upload.bytes >> 10, upload.width,
+                     upload.height, upload.layers, upload.levels, upload.format,
+                     upload.reupload ? " (re-upload)" : "");
+        }
+        largest_uploads = {};
+        upload_ns = reuploads = reupload_bytes = 0;
         images_uploaded = uploaded_bytes = largest_upload = layer_uploads = 0;
         astc_opaque_images = astc_alpha_images = 0;
         std::vector<std::pair<u32, u64>> shapes;
@@ -1728,6 +1745,38 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         return;
     }
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::TextureUpload};
+    // EDEN_NX2_TC_LOG: GPU thread time per upload, and the largest uploads of the window.
+    static const bool log_uploads = std::getenv("EDEN_NX2_TC_LOG") != nullptr;
+    const auto upload_begin = log_uploads ? std::chrono::steady_clock::now()
+                                          : std::chrono::steady_clock::time_point{};
+    const bool reupload = image.upload_count++ != 0;
+    SCOPE_EXIT {
+        if (!log_uploads) {
+            return;
+        }
+        const u64 ns = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                            std::chrono::steady_clock::now() - upload_begin)
+                                            .count());
+        upload_ns += ns;
+        const u64 bytes = image.guest_size_bytes;
+        if (reupload) {
+            ++reuploads;
+            reupload_bytes += bytes;
+        }
+        auto smallest = std::min_element(
+            largest_uploads.begin(), largest_uploads.end(),
+            [](const LargeUpload& a, const LargeUpload& b) { return a.ns < b.ns; });
+        if (ns > smallest->ns) {
+            *smallest = LargeUpload{bytes,
+                                    ns,
+                                    static_cast<u32>(image.info.size.width),
+                                    static_cast<u32>(image.info.size.height),
+                                    static_cast<u32>(image.info.resources.layers),
+                                    static_cast<u32>(image.info.resources.levels),
+                                    static_cast<u32>(image.info.format),
+                                    reupload};
+        }
+    };
 
     image.flags &= ~ImageFlagBits::CpuModified;
 
