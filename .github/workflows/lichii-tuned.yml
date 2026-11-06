@@ -4,7 +4,8 @@ name: lichii-tuned
 # YUZU_BUILD_PRESET. Three flavors, uploaded as artifacts (no release is made):
 #   normal  the PGO build;
 #   lto     the same with ThinLTO;
-#   pgogen  an instrumented build (-fprofile-generate) that writes default_*.profraw next to
+#   pgogen  a build with the GPU emulation instrumented (-fprofile-generate on video_core and
+#           shader_recompiler) that writes default_*.profraw next to
 #           lichii.exe when it exits normally.
 # Profiles: .profraw files (or .zip archives of them) committed under pgo/ are merged into the
 # profile the normal and lto flavors use, weighted over eglantine.profdata; without them,
@@ -144,8 +145,12 @@ jobs:
         shell: msys2 {0}
         run: |
           set -euo pipefail
+          gpu_pgo=OFF
           if [ '${{ matrix.flavor }}' = 'pgogen' ]; then
-            profile="-fprofile-generate"
+            # Only video_core and shader_recompiler are instrumented (LICHII_PGO_GENERATE_GPU):
+            # instrumenting everything left Ocarina stuck at boot (ZBIC NSO decompression failed).
+            profile=""
+            gpu_pgo=ON
           else
             profile="-fprofile-use=$(cygpath -m "$PWD/build/use.profdata") -Wno-backend-plugin \
               -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
@@ -166,7 +171,7 @@ jobs:
             profile="$profile -gcodeview -gline-tables-only"
             linker="$linker -Wl,--pdb="
           fi
-          cmake -S . -B build/release -G Ninja "${lto[@]}" \
+          cmake -S . -B build/release -G Ninja "${lto[@]}" -DLICHII_PGO_GENERATE_GPU=$gpu_pgo \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
             -DYUZU_TESTS=OFF \
