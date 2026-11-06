@@ -804,13 +804,20 @@ void ASTCDecoderPass::AssembleInto(const VideoCommon::ImageInfo& info, u32 skip,
     });
     // Each decode ends with a submit to the host GPU. Measured here
     // (count and time per 5 s); EDEN_NX2_ASTC_FLUSH=0 waits for the host GPU to go idle instead.
-    static const bool flush_only = [] {
+    // EDEN_NX2_ASTC_FLUSH=2 leaves the decode in the command buffer with the frame's work: the
+    // submit only hid a race on RADV (BC3 flashing), and a camera turn in Ocarina decodes ~50
+    // textures a second, each ending the render pass and submitting.
+    static const int flush_mode = [] {
         const char* value = std::getenv("EDEN_NX2_ASTC_FLUSH");
-        return value == nullptr || value[0] != '0';
+        if (value == nullptr) {
+            return 1;
+        }
+        return value[0] == '0' ? 0 : value[0] == '2' ? 2 : 1;
     }();
-    if (!target.wait) {
+    if (!target.wait || flush_mode == 2) {
         return;
     }
+    const bool flush_only = flush_mode == 1;
     const auto start = std::chrono::steady_clock::now();
     if (flush_only) {
         scheduler.Flush();
