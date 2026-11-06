@@ -37,6 +37,15 @@ EDEN_NX2_PLACEMENT=split
 # comes back (the stutter of a first visit, again). 0 = never destroy.
 EDEN_NX2_PIPELINE_EVICT_FRAMES=0
 
+# Texture cache on a 16 GB card: collect from ~10-12 GB instead of the 4.3-5 GB cap, and keep
+# textures unused for ~75 s (they were decoded again on coming back). Leave ~4 GB for the rest.
+#EDEN_NX2_TC_EXPECTED_MIB=10240
+#EDEN_NX2_TC_CRITICAL_MIB=12288
+#EDEN_NX2_TC_OLD_AGE=0
+
+# Build every cached pipeline at boot (longer boot, no stutter for a pipeline seen before).
+#EDEN_NX2_PRELOAD_ALL_PIPELINES=1
+
 # Cap the pipeline (shader) builder threads (default: logical processors - 1).
 #EDEN_NX2_PIPELINE_WORKERS=6
 

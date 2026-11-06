@@ -20,6 +20,7 @@ on:
   push:
     branches:
       - claude/oot-zen2
+      - claude/build88-zen2
     paths:
       - "src/**"
       - "CMakeLists.txt"
@@ -158,6 +159,10 @@ jobs:
           fi
           if [ '${{ matrix.flavor }}' = 'pgogen' ]; then
             linker="$linker -fprofile-generate"
+          else
+            # Line tables in a lichii.pdb beside the exe, for EDEN_NX2_SAMPLE's symbolizer.
+            profile="$profile -gcodeview -gline-tables-only"
+            linker="$linker -Wl,--pdb="
           fi
           cmake -S . -B build/release -G Ninja "${lto[@]}" \
             -DCMAKE_BUILD_TYPE=Release \

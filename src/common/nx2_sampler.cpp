@@ -119,11 +119,35 @@ std::vector<Target> FindThreads(const std::vector<std::string>& patterns) {
     return targets;
 }
 
+// A thread paused in driver or JIT code can hold a stack pointer that points nowhere; reading
+// through it faulted the whole emulator (twice in Ocarina sessions). Every stack read is checked
+// against the committed, writable region holding it (the thread's stack), cached per walk.
+struct StackRegion {
+    DWORD64 low = 0;
+    DWORD64 high = 0;
+
+    bool Holds(DWORD64 address) {
+        if (address >= low && address + sizeof(DWORD64) <= high) {
+            return true;
+        }
+        MEMORY_BASIC_INFORMATION info{};
+        if (VirtualQuery(reinterpret_cast<LPCVOID>(address), &info, sizeof(info)) == 0 ||
+            info.State != MEM_COMMIT || (info.Protect & PAGE_READWRITE) == 0 ||
+            (info.Protect & PAGE_GUARD) != 0) {
+            return false;
+        }
+        low = reinterpret_cast<DWORD64>(info.BaseAddress);
+        high = low + info.RegionSize;
+        return address + sizeof(DWORD64) <= high;
+    }
+};
+
 // Walks a suspended thread's stack from its context. Nothing here may allocate: the thread
 // could be paused holding the heap lock.
 unsigned Walk(CONTEXT context, std::array<DWORD64, MaxDepth>& frames) {
     unsigned depth = 0;
-    while (depth < MaxDepth && context.Rip != 0) {
+    StackRegion stack;
+    while (depth < MaxDepth && context.Rip != 0 && stack.Holds(context.Rsp)) {
         frames[depth++] = context.Rip;
         DWORD64 image_base{};
         const PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &image_base, nullptr);
