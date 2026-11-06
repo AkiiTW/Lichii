@@ -26,8 +26,9 @@ EDEN_NX2_FENCE_BATCH=1
 # Keep GPU, GPUBack and VulkanWorker on one L3 domain (CCX/CCD): their ring handoffs stop
 # crossing the Infinity Fabric. "split" also keeps guest CPU cores and pipeline/texture workers
 # on the other domains. Off by default; the log shows the masks ("Nx2Placement").
+# Ryzen 7 3800X, Ocarina in Kokiri Forest: split 28-29 FPS (24 before), wide view 24 (18-19).
+EDEN_NX2_PLACEMENT=split
 #EDEN_NX2_PLACEMENT=gpu
-#EDEN_NX2_PLACEMENT=split
 # Which L3 domain gets the GPU threads (0 = the one with CPU 0; default: the last one).
 #EDEN_NX2_PLACEMENT_DOMAIN=0
 
