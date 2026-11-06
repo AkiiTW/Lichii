@@ -38,9 +38,12 @@ EDEN_NX2_PLACEMENT=split
 EDEN_NX2_PIPELINE_EVICT_FRAMES=0
 
 # Keep textures unused for ~75 s (they were decoded again on coming back). Leave the
-# EDEN_NX2_TC_EXPECTED_MIB / _CRITICAL_MIB thresholds alone for Switch 2 titles: the cache
-# already follows the driver's budget there, and a fixed value only lowers it (and is logged
-# again at every budget check).
+# The texture cache collects from 5 GiB on (MaxCriticalMemory caps the driver budget it follows),
+# so on a 16 GB card Ocarina evicts the textures of the part of the village behind the camera and
+# decodes their ASTC again when the camera turns. Fixed thresholds win over that cap; keep them
+# a few GB under the card's budget (16 GB card: ~14 GB).
+EDEN_NX2_TC_EXPECTED_MIB=9216
+EDEN_NX2_TC_CRITICAL_MIB=11264
 EDEN_NX2_TC_OLD_AGE=0
 
 # Build every cached pipeline at boot (longer boot, no stutter for a pipeline seen before).
