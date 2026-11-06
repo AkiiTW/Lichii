@@ -785,6 +785,18 @@ PipelineCache::~PipelineCache() {
 }
 
 namespace {
+// EDEN_NX2_VERTEX_KEY_MERGE=0 files pipelines under their full vertex attribute types again.
+bool MergeVertexKeys() {
+    static const bool enabled = [] {
+        const char* const value = std::getenv("EDEN_NX2_VERTEX_KEY_MERGE");
+        const bool on = value == nullptr || value[0] != '0';
+        LOG_INFO(Render_Vulkan, "Pipelines differing only in unread vertex attributes: {}",
+                 on ? "shared" : "separate");
+        return on;
+    }();
+    return enabled;
+}
+
 // EDEN_NX2_PIPELINE_DIFF=1: for a new graphics pipeline whose shaders an earlier one uses too,
 // log which parts of the fixed state differ from that one (finds state that splits the same
 // draws into many pipelines, each translated on the GPU thread).
@@ -808,12 +820,17 @@ u64 ShadersHash(const GraphicsPipelineCacheKey& key) {
 
 /// Keys read from the disk cache are the reference for the first pipeline the session builds
 /// with the same shaders: a key that differs there shows what keeps the cache from covering it.
-void RememberCachedPipelineKey(const GraphicsPipelineCacheKey& key) {
+/// `built` replaces the key read from disk with the one the pipeline was filed under.
+void RememberCachedPipelineKey(const GraphicsPipelineCacheKey& key, bool built = false) {
     if (!PipelineDiffEnabled()) {
         return;
     }
     std::scoped_lock lock{known_keys_mutex};
-    known_keys_by_shaders.try_emplace(ShadersHash(key), KnownPipelineKey{key, true});
+    if (built) {
+        known_keys_by_shaders.insert_or_assign(ShadersHash(key), KnownPipelineKey{key, true});
+    } else {
+        known_keys_by_shaders.try_emplace(ShadersHash(key), KnownPipelineKey{key, true});
+    }
 }
 
 void ReportNewPipelineKey(const GraphicsPipelineCacheKey& key) {
@@ -873,6 +890,36 @@ void ReportNewPipelineKey(const GraphicsPipelineCacheKey& key) {
 }
 } // Anonymous namespace
 
+u64 PipelineCache::RecordAttributeMask(const GraphicsPipelineCacheKey& key, u64 program_mask) {
+    if (!MergeVertexKeys()) {
+        return ~u64{0};
+    }
+    std::scoped_lock lock{attribute_masks_mutex};
+    const auto [it, inserted] =
+        attribute_masks.try_emplace({key.unique_hashes[0], key.unique_hashes[1]}, program_mask);
+    if (inserted || (it->second | program_mask) != it->second) {
+        it->second |= program_mask;
+        attribute_masks_generation.fetch_add(1, std::memory_order_release);
+    }
+    return it->second;
+}
+
+void PipelineCache::NormalizeVertexInputKey(GraphicsPipelineCacheKey& key) {
+    if (!key.state.dynamic_vertex_input || !MergeVertexKeys()) {
+        return;
+    }
+    const u64 generation = attribute_masks_generation.load(std::memory_order_acquire);
+    if (generation != mask_cache_generation || key.unique_hashes[0] != mask_cache_hashes[0] ||
+        key.unique_hashes[1] != mask_cache_hashes[1]) {
+        std::scoped_lock lock{attribute_masks_mutex};
+        const auto it = attribute_masks.find({key.unique_hashes[0], key.unique_hashes[1]});
+        mask_cache_value = it != attribute_masks.end() ? it->second : ~u64{0};
+        mask_cache_hashes = {key.unique_hashes[0], key.unique_hashes[1]};
+        mask_cache_generation = generation;
+    }
+    key.state.attribute_types &= mask_cache_value;
+}
+
 void PipelineCache::SaveUsedPipelines() {
     used_pipelines_saved = std::chrono::steady_clock::now();
     // A session too short to say what the game uses (a boot to the menu) keeps the old list.
@@ -886,6 +933,10 @@ void PipelineCache::SaveUsedPipelines() {
     for (const auto& [key, pipeline] : graphics_cache) {
         if (used_this_session.contains(pipeline.get())) {
             next.emplace(key.Hash(), u8{0});
+            // The disk cache may hold it under the key it was built from.
+            if (const u64 source = pipeline->SourceHash(); source != 0) {
+                next.emplace(source, u8{0});
+            }
         }
     }
     for (const u64 hash : used_and_evicted) {
@@ -1182,7 +1233,10 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipeline() {
         current_pipeline = nullptr;
         return nullptr;
     }
+    graphics_key.state.attribute_types = raw_attribute_types;
     graphics_key.state.Refresh(*maxwell3d, dynamic_features);
+    raw_attribute_types = graphics_key.state.attribute_types;
+    NormalizeVertexInputKey(graphics_key);
 
     if (current_pipeline) {
         GraphicsPipeline* const next{current_pipeline->Next(graphics_key)};
@@ -1400,7 +1454,15 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
 
             std::scoped_lock lock{state.mutex};
             if (pipeline) {
-                graphics_cache.emplace(key, std::move(pipeline));
+                const GraphicsPipelineCacheKey stored = pipeline->Key();
+                if (!(stored == key)) {
+                    pipeline->SetSourceHash(key.Hash());
+                    RememberCachedPipelineKey(stored, true);
+                }
+                // A pipeline another cached key already gave is dropped here.
+                if (!graphics_cache.try_emplace(stored, std::move(pipeline)).second) {
+                    merged_disk_pipelines.fetch_add(1, std::memory_order_relaxed);
+                }
             }
             ++state.built;
             if (state.has_loaded) {
@@ -1425,6 +1487,12 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     lock.unlock();
 
     workers.WaitForRequests(stop_loading);
+    if (const size_t merged = merged_disk_pipelines.load(std::memory_order_relaxed); merged != 0) {
+        LOG_INFO(Render_Vulkan,
+                 "{} cached graphics pipelines differed from another only in vertex attributes "
+                 "their shaders never read: dropped",
+                 merged);
+    }
 
     if (!deferred_graphics.empty() && !stop_loading.stop_requested()) {
         const size_t threads = BackgroundPipelineThreads();
@@ -1520,14 +1588,30 @@ void PipelineCache::QueueVulkanPipelineCacheFlush() {
 }
 
 GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
-    const auto [pair, is_new]{graphics_cache.try_emplace(graphics_key)};
-    auto& pipeline{pair->second};
-    if (is_new) {
+    GraphicsPipeline* pipeline{};
+    if (const auto it = graphics_cache.find(graphics_key); it != graphics_cache.end()) {
+        pipeline = it->second.get();
+    } else {
         ReportNewPipelineKey(graphics_key);
-        pipeline = TakeBackgroundPipeline(graphics_key);
-        if (!pipeline) {
-            pipeline = CreateGraphicsPipeline();
+        std::unique_ptr<GraphicsPipeline> built = TakeBackgroundPipeline(graphics_key);
+        if (!built && graphics_key.state.attribute_types != raw_attribute_types) {
+            // Background prebuilds are filed under the key read from disk.
+            GraphicsPipelineCacheKey raw_key{graphics_key};
+            raw_key.state.attribute_types = raw_attribute_types;
+            built = TakeBackgroundPipeline(raw_key);
         }
+        if (!built) {
+            built = CreateGraphicsPipeline();
+        }
+        GraphicsPipelineCacheKey filed_key = graphics_key;
+        if (built && !(built->Key() == graphics_key) && !graphics_cache.contains(built->Key())) {
+            // The build found vertex attributes its shaders never read: the pipeline is filed
+            // under the key with their types cleared, the one later draws look up.
+            filed_key = built->Key();
+            graphics_key = filed_key;
+        }
+        pipeline = built.get();
+        graphics_cache.emplace(filed_key, std::move(built));
     }
     if (!pipeline) {
         return nullptr;
@@ -1535,14 +1619,14 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
     const auto save_interval = VideoCommon::Nx2Perf::On(VideoCommon::Nx2Perf::Opt::PipelineRetention)
                                    ? std::chrono::steady_clock::duration{std::chrono::seconds{15}}
                                    : std::chrono::steady_clock::duration{std::chrono::minutes{2}};
-    if (used_this_session.insert(pipeline.get()).second &&
+    if (used_this_session.insert(pipeline).second &&
         std::chrono::steady_clock::now() - used_pipelines_saved > save_interval) {
         SaveUsedPipelines();
     }
     if (current_pipeline) {
-        current_pipeline->AddTransition(pipeline.get());
+        current_pipeline->AddTransition(pipeline);
     }
-    current_pipeline = pipeline.get();
+    current_pipeline = pipeline;
     current_pipeline->MarkUsed(frame_count);
     return BuiltPipeline(current_pipeline);
 }
@@ -1606,6 +1690,9 @@ void PipelineCache::EvictUnusedPipelines() {
         }
         if (used_this_session.erase(pipeline) != 0) {
             used_and_evicted.insert(it->first.Hash());
+            if (const u64 source = pipeline->SourceHash(); source != 0) {
+                used_and_evicted.insert(source);
+            }
         }
         evicted_pipelines.emplace_back(tick, std::move(it->second));
         it = graphics_cache.erase(it);
@@ -1797,6 +1884,23 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline(
             }
         }
     }
+    // The types of vertex attributes the vertex shaders never read change nothing in the
+    // pipeline (dynamic vertex input, unread inputs are not declared): the pipeline is filed
+    // under a key with them cleared, so draws that differ only there share it.
+    GraphicsPipelineCacheKey stored_key{key};
+    if (key.state.dynamic_vertex_input && key.unique_hashes[1] != 0) {
+        const Shader::Info& vertex_info{programs[1].info};
+        u64 program_mask = ~u64{0};
+        if (!vertex_info.loads_indexed_attributes && !vertex_info.loads.Legacy()) {
+            program_mask = 0;
+            for (size_t index = 0; index < Maxwell::NumVertexAttributes; ++index) {
+                if (vertex_info.loads.Generic(index)) {
+                    program_mask |= u64{0b11} << (index * 2);
+                }
+            }
+        }
+        stored_key.state.attribute_types &= RecordAttributeMask(key, program_mask);
+    }
     std::array<const Shader::Info*, Maxwell::MaxShaderStage> infos{};
     std::array<vk::ShaderModule, Maxwell::MaxShaderStage> modules;
     std::array<std::optional<Shader::RuntimeInfo>, Maxwell::MaxShaderStage> deferred_runtime_infos;
@@ -1876,7 +1980,7 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline(
     return std::make_unique<GraphicsPipeline>(
         scheduler, buffer_cache, texture_cache, vulkan_pipeline_cache, &shader_notify, device,
         descriptor_pool, guest_descriptor_queue, descriptor_buffer_ring, thread_worker, statistics,
-        render_pass_cache, key, std::move(modules), infos, std::move(emit_stages));
+        render_pass_cache, stored_key, std::move(modules), infos, std::move(emit_stages));
 
 } catch (const Shader::Exception& exception) {
     auto hash = key.Hash();
@@ -1979,13 +2083,14 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline() {
     if (!pipeline || pipeline_cache_filename.empty()) {
         return pipeline;
     }
-    if (disk_pipelines.contains(graphics_key.Hash())) {
+    const GraphicsPipelineCacheKey& stored_key = pipeline->Key();
+    if (disk_pipelines.contains(graphics_key.Hash()) || disk_pipelines.contains(stored_key.Hash())) {
         // In the disk cache already, only not built at boot.
         QueueVulkanPipelineCacheFlush();
         return pipeline;
     }
-    disk_pipelines.insert(graphics_key.Hash());
-    serialization_thread.QueueWork([this, key = graphics_key, envs = std::move(environments.envs)] {
+    disk_pipelines.insert(stored_key.Hash());
+    serialization_thread.QueueWork([this, key = stored_key, envs = std::move(environments.envs)] {
         boost::container::static_vector<const GenericEnvironment*, Maxwell::MaxShaderProgram>
             env_ptrs;
         for (size_t index = 0; index < Maxwell::MaxShaderProgram; ++index) {

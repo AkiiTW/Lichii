@@ -93,6 +93,17 @@ public:
     static std::chrono::nanoseconds TakeHoldTime() noexcept;
 
     bool HasDynamicVertexInput() const noexcept { return key.state.dynamic_vertex_input; }
+    const GraphicsPipelineCacheKey& Key() const noexcept {
+        return key;
+    }
+    /// Hash of the disk cache key this pipeline was built from, when it is filed under another
+    /// key (see PipelineCache::NormalizeVertexInputKey); 0 otherwise.
+    u64 SourceHash() const noexcept {
+        return source_hash;
+    }
+    void SetSourceHash(u64 hash) noexcept {
+        source_hash = hash;
+    }
     const std::array<u64, 6>& ShaderHashes() const noexcept {
         return key.unique_hashes;
     }
@@ -196,6 +207,7 @@ private:
     void Validate();
 
     const GraphicsPipelineCacheKey key;
+    u64 source_hash{};
     Tegra::Engines::Maxwell3D* maxwell3d;
     Tegra::MemoryManager* gpu_memory;
     const Device& device;
