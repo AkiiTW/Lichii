@@ -37,7 +37,7 @@ EDEN_NX2_PLACEMENT=split
 # comes back (the stutter of a first visit, again). 0 = never destroy.
 EDEN_NX2_PIPELINE_EVICT_FRAMES=0
 
-# Keep textures unused for ~75 s (they were decoded again on coming back). Leave the
+# Keep textures unused for ~75 s (they were decoded again on coming back).
 # The texture cache collects from 5 GiB on (MaxCriticalMemory caps the driver budget it follows),
 # so on a 16 GB card Ocarina evicts the textures of the part of the village behind the camera and
 # decodes their ASTC again when the camera turns. Fixed thresholds win over that cap; keep them
