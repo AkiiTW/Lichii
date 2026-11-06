@@ -1960,8 +1960,19 @@ void PipelineCache::EvictUnusedPipelines() {
     // Each built pipeline holds ~0.45 MB of driver memory and none was ever destroyed, so it grew
     // with every place a session went (title 1: 1,500 on its title screen alone). One unused for
     // this long is destroyed; it takes 2-3 ms to build again from the driver's pipeline cache.
-    constexpr u64 EvictAfterFrames = 9000;
-    if (frame_count <= EvictAfterFrames) {
+    // EXPERIMENT: a native program's pipeline is translated again on the GPU thread as well
+    // (10-20 ms each on a Ryzen 7 3800X in Ocarina), so returning to a place stutters as on the
+    // first visit. EDEN_NX2_PIPELINE_EVICT_FRAMES=<frames> sets the age, 0 never evicts.
+    static const u64 EvictAfterFrames = [] {
+        if (const char* value = std::getenv("EDEN_NX2_PIPELINE_EVICT_FRAMES"); value != nullptr) {
+            const u64 frames = std::strtoull(value, nullptr, 10);
+            LOG_INFO(Render_Vulkan, "Pipeline eviction: {}",
+                     frames == 0 ? std::string{"off"} : fmt::format("after {} frames", frames));
+            return frames;
+        }
+        return u64{9000};
+    }();
+    if (EvictAfterFrames == 0 || frame_count <= EvictAfterFrames) {
         return;
     }
     // Only while the cache is large: each one evicted is translated again on the GPU thread when
