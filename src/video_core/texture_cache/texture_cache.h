@@ -3146,14 +3146,18 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
     // other targets used (~200 a second); uploading that memory was ~9 GB per 600 frames, 6.6 GB
     // of it into depth buffers the GPU then overwrites. Tracked from here on, so a CPU write still
     // marks it for upload.
-    static const bool rt_no_upload = [] {
+    // =2 also covers depth/stencil images made for any other use (sampled first): the CPU never
+    // writes a D32 buffer, and those uploads were still ~3-5 GB per 600 frames with =1.
+    static const int rt_no_upload = [] {
         const char* value = std::getenv("EDEN_NX2_TC_RT_NO_UPLOAD");
-        const bool on = value != nullptr && value[0] == '1';
-        LOG_INFO(HW_GPU, "EDEN_NX2_TC_RT_NO_UPLOAD: {}", on ? "on" : "off");
-        return on;
+        const int level = value != nullptr && (value[0] == '1' || value[0] == '2') ? value[0] - '0' : 0;
+        LOG_INFO(HW_GPU, "EDEN_NX2_TC_RT_NO_UPLOAD: {}", level);
+        return level;
     }();
-    if (rt_no_upload && finding_render_target && join_copies_to_do.empty() &&
-        False(new_image.flags & ImageFlagBits::Sparse)) {
+    const bool depth_format =
+        VideoCore::Surface::GetFormatType(new_info.format) != VideoCore::Surface::SurfaceType::ColorTexture;
+    if (rt_no_upload != 0 && (finding_render_target || (rt_no_upload >= 2 && depth_format)) &&
+        join_copies_to_do.empty() && False(new_image.flags & ImageFlagBits::Sparse)) {
         new_image.flags &= ~ImageFlagBits::CpuModified;
         if (False(new_image.flags & ImageFlagBits::Tracked)) {
             TrackImage(new_image, new_image_id);
