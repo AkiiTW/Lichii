@@ -63,6 +63,11 @@ enum class Zone : u32 {
     WriterWait,
     ListSubmitWait,
     ListGpuWait,
+    UboFast,      ///< Uniform buffers streamed (small, not GPU-written): compare or copy
+    UboClassic,   ///< Uniform buffers bound from the buffer cache (SynchronizeBuffer)
+    UboBank,      ///< 64 KiB native banks uploaded again once per frame
+    StorageBinds, ///< Graphics storage buffers bound with the stage's buffers
+    TexBufBinds,  ///< Graphics texture buffers bound with the stage's buffers
     Count,
 };
 
@@ -75,6 +80,7 @@ inline constexpr std::array<const char*, static_cast<size_t>(Zone::Count)> zone_
     "configure draw", "dynamic state", "draw record", "texture upload", "fence",
     "fence skipped", "method", "split drain", "split wait",
     "writer wait", "list submit wait", "list GPU wait",
+    "ubo fast",      "ubo classic",   "ubo bank",       "storage binds",  "texbuf binds",
 };
 
 // Read once, when the GPU thread starts (Initialize): Enabled() runs several times per method
@@ -250,6 +256,10 @@ enum class Counter : u32 {
     SemAsyncPending,  ///< SemaphoreReadableNow false: a counter report or timed release is pending
     SemWritersWait,   ///< SemaphoreReadableNow false: WaitForWritesTo gave up
     AcquireNoDrain,   ///< Acquires of a current word not met yet that registered without a drain
+    UboFastBytes,     ///< Bytes of uniform buffers taken by the fast (streamed) path
+    UboClassicBytes,  ///< Bytes of uniform buffers bound by the classic path
+    UboClassicSynced, ///< Classic binds whose SynchronizeBuffer found CPU-written data to upload
+    UboBankBytes,     ///< Bytes of 64 KiB native banks uploaded again
     Count,
 };
 static_assert(static_cast<size_t>(Counter::Count) <= 64, "Counter outgrew the counters array");
@@ -417,6 +427,25 @@ inline void Report(const char* thread_name = "GPU thread") {
         line += fmt::format(" | uniform buffers compared in place {:.0f} unchanged, {:.0f} changed",
                             static_cast<double>(same) * 1e9 / window,
                             static_cast<double>(changed) * 1e9 / window);
+    }
+    if (data.count[static_cast<size_t>(Zone::UboFast)] != 0 ||
+        data.count[static_cast<size_t>(Zone::UboClassic)] != 0) {
+        const auto per_second = [&](u64 value) {
+            return static_cast<double>(value) * 1e9 / window;
+        };
+        const auto bytes_each = [&](Counter counter, Zone zone) {
+            const u64 calls = data.count[static_cast<size_t>(zone)];
+            return calls != 0
+                       ? static_cast<double>(data.counters[static_cast<size_t>(counter)]) / calls
+                       : 0.0;
+        };
+        line += fmt::format(" | uniform buffer sizes: fast {:.0f} B each, classic {:.0f} B each "
+                            "({:.0f}/s with CPU-written data), banks {:.0f} KiB/s",
+                            bytes_each(Counter::UboFastBytes, Zone::UboFast),
+                            bytes_each(Counter::UboClassicBytes, Zone::UboClassic),
+                            per_second(data.counters[static_cast<size_t>(Counter::UboClassicSynced)]),
+                            per_second(data.counters[static_cast<size_t>(Counter::UboBankBytes)]) /
+                                1024.0);
     }
     if (const u64 early = data.counters[static_cast<size_t>(Counter::DmaReadsEarly)]; early != 0) {
         const auto rate = [&](Counter counter) {

@@ -709,9 +709,11 @@ template <class P>
 void BufferCache<P>::BindHostStageBuffers(size_t stage) {
     BindHostGraphicsUniformBuffers(stage);
     if (channel_state->enabled_storage_buffers[stage] != 0) {
+        Nx2Profile::Scope scope{Nx2Profile::Zone::StorageBinds};
         BindHostGraphicsStorageBuffers(stage);
     }
     if (channel_state->enabled_texture_buffers[stage] != 0) {
+        Nx2Profile::Scope scope{Nx2Profile::Zone::TexBufBinds};
         BindHostGraphicsTextureBuffers(stage);
     }
 }
@@ -1484,6 +1486,7 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
          !native_indirect_uniforms_this_frame.contains(device_addr)) &&
         !memory_tracker.IsRegionGpuModified(device_addr, size) &&
         native_indirect_uniforms_this_frame.insert(device_addr).second) {
+        Nx2Profile::Scope scope{Nx2Profile::Zone::UboBank};
         // The bank size is only an upper limit: stop at the end of the mapped memory.
         u64 mapped_size = 0;
         while (mapped_size < size &&
@@ -1498,12 +1501,15 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
                 .size = upload_size,
             }};
             UploadMemory(buffer, upload_size, upload_size, copies);
+            Nx2Profile::Add(Nx2Profile::Counter::UboBankBytes, upload_size);
         }
     }
     const bool use_fast_buffer = needs_alignment_stream
         || (has_host_buffer && size <= channel_state->uniform_buffer_skip_cache_size
             && !memory_tracker.IsRegionGpuModified(device_addr, size));
     if (use_fast_buffer) {
+        Nx2Profile::Scope scope{Nx2Profile::Zone::UboFast};
+        Nx2Profile::Add(Nx2Profile::Counter::UboFastBytes, size);
         if constexpr (IS_OPENGL) {
             if (runtime.HasFastBufferSubData()) {
                 // Fast path for Nvidia
@@ -1541,8 +1547,12 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
         return;
     }
     // Classic cached path
+    Nx2Profile::Scope scope{Nx2Profile::Zone::UboClassic};
+    Nx2Profile::Add(Nx2Profile::Counter::UboClassicBytes, size);
     if (SynchronizeBuffer(buffer, device_addr, size)) {
         ++channel_state->uniform_cache_hits[0];
+    } else {
+        Nx2Profile::Add(Nx2Profile::Counter::UboClassicSynced, 1);
     }
     // Skip binding if it's not needed and if the bound buffer is not the fast version
     // This exists to avoid instances where the fast buffer is bound and a GPU write happens
