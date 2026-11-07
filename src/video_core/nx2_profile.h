@@ -68,6 +68,12 @@ enum class Zone : u32 {
     UboBank,      ///< 64 KiB native banks uploaded again once per frame
     StorageBinds, ///< Graphics storage buffers bound with the stage's buffers
     TexBufBinds,  ///< Graphics texture buffers bound with the stage's buffers
+    ClearTargets, ///< A clear finding its render targets and framebuffer (UpdateRenderTargets)
+    ImageJoin,    ///< JoinImages outside the image creation below (overlaps, copies, setup)
+    ImageCreate,  ///< Host image made for a new cache image (VkImage + memory)
+    ViewCreate,   ///< Image view made for a cache image
+    FramebufferCreate, ///< Framebuffer made for a new set of render targets
+    TcTick,       ///< Texture cache end-of-frame work: collector, freeing sentenced images
     Count,
 };
 
@@ -81,6 +87,8 @@ inline constexpr std::array<const char*, static_cast<size_t>(Zone::Count)> zone_
     "fence skipped", "method", "split drain", "split wait",
     "writer wait", "list submit wait", "list GPU wait",
     "ubo fast",      "ubo classic",   "ubo bank",       "storage binds",  "texbuf binds",
+    "clear targets", "image join",    "image create",   "view create",    "framebuffer create",
+    "tc tick",
 };
 
 // Read once, when the GPU thread starts (Initialize): Enabled() runs several times per method
