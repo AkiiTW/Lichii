@@ -90,3 +90,8 @@ Copie locale : scratchpad/notes (remote origin).
 Cause : cibles de rendu recréées ~200/s (mémoire réutilisée), remplies avec la mémoire du jeu. EDEN_NX2_TC_RT_NO_UPLOAD=2 GARDÉ :
 marché 48,6 → 40,4 ms/image, images >100 ms 42 → ~5. Reste : uploads de profondeur par un autre chemin (1,4-5 Go/600 images), clears ~70 ms/s,
 garder les cibles aliasées en vie. Seuils TC plus grands (12288/13824) = pire (VRAM pleine).
+
+## Test 9 (2026-11-07 17:18) : GARDÉ
+EDEN_NX2_TC_RT_NO_UPLOAD=3 + EDEN_NX2_TC_RT_EVICT=4 (build 361d135) : texture upload 131 → 1,3 ms/s, marché 48,6 → 38,5 ms/image,
+images >100 ms 42 → 1, VRAM 7,5-9 Go sous le seuil, 0 téléchargement. Ressenti : « bien meilleur, 21 FPS minimum ».
+Suite : réutiliser les images hôtes par forme (~8 000 créations / 600 images), intégrer « acquire learning » de Frizti (+12,6 %).
