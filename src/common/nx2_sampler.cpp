@@ -38,7 +38,31 @@ struct Sample {
 struct Target {
     HANDLE handle;
     std::string name;
+    DWORD64 stack_base; ///< Upper end of the thread's stack (0: unknown, walk the first frame only)
 };
+
+// The thread's stack base from its TEB (NT_TIB::StackBase), read in this process.
+DWORD64 StackBase(HANDLE thread) {
+    struct ThreadBasicInformation {
+        LONG exit_status;
+        PVOID teb_base;
+        PVOID client_id[2];
+        ULONG_PTR affinity_mask;
+        LONG priority;
+        LONG base_priority;
+    };
+    using QueryFn = LONG(WINAPI*)(HANDLE, int, PVOID, ULONG, PULONG);
+    static const auto query = reinterpret_cast<QueryFn>(reinterpret_cast<void*>(
+        GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQueryInformationThread")));
+    if (query == nullptr) {
+        return 0;
+    }
+    ThreadBasicInformation info{};
+    if (query(thread, 0, &info, sizeof(info), nullptr) < 0 || info.teb_base == nullptr) {
+        return 0;
+    }
+    return reinterpret_cast<DWORD64>(static_cast<NT_TIB*>(info.teb_base)->StackBase);
+}
 
 double EnvSeconds(const char* name, double fallback) {
     const char* text = std::getenv(name);
@@ -95,7 +119,7 @@ std::vector<Target> FindThreads(const std::vector<std::string>& patterns) {
             continue;
         }
         const HANDLE handle = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT |
-                                             THREAD_QUERY_LIMITED_INFORMATION,
+                                             THREAD_QUERY_INFORMATION,
                                          FALSE, entry.th32ThreadID);
         if (handle == nullptr) {
             continue;
@@ -110,7 +134,7 @@ std::vector<Target> FindThreads(const std::vector<std::string>& patterns) {
             LocalFree(wide);
         }
         if (Matches(name, patterns)) {
-            targets.push_back({handle, name});
+            targets.push_back({handle, name, StackBase(handle)});
         } else {
             CloseHandle(handle);
         }
@@ -120,11 +144,21 @@ std::vector<Target> FindThreads(const std::vector<std::string>& patterns) {
 }
 
 // Walks a suspended thread's stack from its context. Nothing here may allocate: the thread
-// could be paused holding the heap lock.
-unsigned Walk(CONTEXT context, std::array<DWORD64, MaxDepth>& frames) {
+// could be paused holding the heap lock. Every read stays between the stack pointer at the pause
+// and the stack's base, and each frame must move up: a frame unwound from a wrong guess (code
+// without unwind data, such as the macro JIT) stops the walk instead of reading stray memory.
+unsigned Walk(CONTEXT context, DWORD64 stack_base, std::array<DWORD64, MaxDepth>& frames) {
     unsigned depth = 0;
+    const DWORD64 stack_low = context.Rsp;
+    const auto on_stack = [&](DWORD64 rsp) {
+        return stack_base != 0 && rsp >= stack_low && rsp + 8 <= stack_base;
+    };
     while (depth < MaxDepth && context.Rip != 0) {
         frames[depth++] = context.Rip;
+        if (!on_stack(context.Rsp)) {
+            break;
+        }
+        const DWORD64 previous_rsp = context.Rsp;
         DWORD64 image_base{};
         const PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &image_base, nullptr);
         if (function == nullptr) {
@@ -141,6 +175,9 @@ unsigned Walk(CONTEXT context, std::array<DWORD64, MaxDepth>& frames) {
         DWORD64 establisher_frame{};
         RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, context.Rip, function, &context,
                          &handler_data, &establisher_frame, nullptr);
+        if (context.Rsp <= previous_rsp) {
+            break;
+        }
     }
     return depth;
 }
@@ -327,7 +364,7 @@ std::string SampleThreads(const std::vector<std::string>& patterns, double secon
             if (GetThreadContext(handle, &context)) {
                 Sample& sample = samples.emplace_back();
                 sample.thread = i;
-                sample.depth = Walk(context, sample.frames);
+                sample.depth = Walk(context, targets[i].stack_base, sample.frames);
             }
             ResumeThread(handle);
         }
