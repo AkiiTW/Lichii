@@ -4317,20 +4317,27 @@ ImageView::ImageView(TextureCacheRuntime& runtime, const VideoCommon::ImageViewI
                                  ? VK_FORMAT_BC1_RGBA_SRGB_BLOCK
                                  : VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
     }
-    if (device->ApiVersion() >= VK_API_VERSION_1_3) {
-        const VkFormatProperties3 properties3 =
-            device->GetPhysical().GetFormatProperties3(format_info.format);
-        supports_depth_comparison =
-            (properties3.optimalTilingFeatures &
-             VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT) != 0;
-        supports_minmax_filter = (properties3.optimalTilingFeatures &
-                                  VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_FILTER_MINMAX_BIT) != 0;
-    } else {
-        supports_depth_comparison = true;
-        supports_minmax_filter =
-            (device->GetPhysical().GetFormatProperties(format_info.format).optimalTilingFeatures &
-             VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_MINMAX_BIT) != 0;
+    const auto [support_it, support_is_new] =
+        runtime.view_format_support.try_emplace(format_info.format);
+    if (support_is_new) {
+        auto& support = support_it->second;
+        if (device->ApiVersion() >= VK_API_VERSION_1_3) {
+            const VkFormatProperties3 properties3 =
+                device->GetPhysical().GetFormatProperties3(format_info.format);
+            support.depth_comparison =
+                (properties3.optimalTilingFeatures &
+                 VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT) != 0;
+            support.minmax_filter = (properties3.optimalTilingFeatures &
+                                     VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_FILTER_MINMAX_BIT) != 0;
+        } else {
+            support.depth_comparison = true;
+            support.minmax_filter =
+                (device->GetPhysical().GetFormatProperties(format_info.format).optimalTilingFeatures &
+                 VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_MINMAX_BIT) != 0;
+        }
     }
+    supports_depth_comparison = support_it->second.depth_comparison;
+    supports_minmax_filter = support_it->second.minmax_filter;
     if (VideoCommon::RenderTrace::Enabled() &&
         (aspect_mask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0) {
         LOG_DEBUG(Render_Vulkan,
