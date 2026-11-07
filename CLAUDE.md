@@ -71,3 +71,7 @@ Par seconde au marché (~150 ms au total) :
 - reste de la zone ~13 ms. Texture upload toujours ~80-200 ms/s (~90-180/s) dans cette fenêtre.
 Essais : 3) EDEN_NX2_PERF_ON=clean_words (aucune recompilation) ; ensuite code : comparer la banque avant de la ré-envoyer,
 sous-zones dans TextureUpload, compteurs de taille des storage buffers.
+
+## clean_words (2026-11-07 15:13) : GARDÉ
+storage binds 64 → 17 ms/s ; draws/s +3 % ; frame inchangé (bruit textures + attentes front/back). Aucun défaut
+visuel vu par l'utilisateur (marché). À vérifier un jour en forêt Kokiri (bug #161 suspecté à l'époque).
