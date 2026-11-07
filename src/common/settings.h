@@ -635,7 +635,7 @@ struct Values {
     // Ocarina of Time: present at 30 fps for lower-end PCs (nx2_gsv.h PaceToVblank). The game's
     // timing follows real time (Dynamic FPS by Dark), so it keeps full speed. Asked once at the
     // first launch (oot_fps_asked).
-    SwitchableSetting<bool> oot_30fps{linkage, false, "oot_30fps", Category::RendererAdvanced};
+    SwitchableSetting<bool> oot_30fps{linkage, true, "oot_30fps", Category::RendererAdvanced};
     Setting<bool> oot_fps_asked{linkage, false, "oot_fps_asked", Category::RendererAdvanced};
     // Which revision of the Frizti tuned settings (common/frizti_settings.h) this config has had
     // applied once (MainWindow::MigrateFriztiSettings; config/frizti.ini keeps it too).
