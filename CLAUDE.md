@@ -43,3 +43,14 @@ Protocole : marché (tours de la fontaine caméra comme DT) puis course dans la 
 
 ## Déjà essayé sans gain
 TC_NO_CAP (pire), DMA_READ_WAIT=track (pire), PREFLUSH=1 (flashs blancs), mods cascades (bug), mode portable (≈0).
+
+## Veille : Claude de Frizti (captures envoyées par l'utilisateur)
+Il travaille sur les attentes du front (lectures DMA des macros), nous sur le coût par rendu du back.
+- 2026-11-07 14:53 — marché 34 FPS (objectif 50-60). Trouvé : ~1 000 attentes/s du thread GPU = une
+  vérification qui abandonne après 512 écritures en attente (chez nous : compteurs « WaitForWritesTo gave up »
+  / « DMA reads waited for unknown writes »). En test : index des écritures par page + suivi des envois
+  inline. Ensuite : A/B de vitesse sur le parcours enregistré de Frizti.
+- 2026-11-07 14:49 — marché 33-38 FPS. Analyse des ~2 000 attentes/s du front ; test d'un contrôle de
+  recouvrement octet par octet (pas d'attente pour une écriture voisine sur la même page) ; ensuite suivre
+  les plages écrites par les envois inline.
+→ Récupérer ses commits dès leur publication (gain estimé chez nous : jusqu'à ~+15 %, trous du back ~130 ms/s).
