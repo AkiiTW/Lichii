@@ -4,12 +4,14 @@
 // SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <utility>
 
 #include "common/assert.h"
@@ -237,6 +239,36 @@ struct GPU::Impl {
         gpu_thread.FlushRegion(addr, size, is_async);
     }
 
+    /// How long guest CPU threads wait for the GPU when they read memory the GPU wrote (each read
+    /// waits for the GPU thread to reach it and copy the data back): logged every 10 s.
+    void ReportCpuReadWait(std::chrono::steady_clock::duration waited, u64 bytes) {
+        static std::mutex report_mutex;
+        static std::chrono::steady_clock::time_point window_start = std::chrono::steady_clock::now();
+        static u64 count{};
+        static u64 total_ns{};
+        static u64 max_ns{};
+        static u64 total_bytes{};
+        const u64 ns = static_cast<u64>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(waited).count());
+        std::scoped_lock lock{report_mutex};
+        ++count;
+        total_ns += ns;
+        max_ns = (std::max)(max_ns, ns);
+        total_bytes += bytes;
+        const auto now = std::chrono::steady_clock::now();
+        const double seconds = std::chrono::duration<double>(now - window_start).count();
+        if (seconds < 10.0) {
+            return;
+        }
+        LOG_INFO(HW_GPU,
+                 "Guest CPU reads of GPU-written memory per second: {:.0f} reads, {:.1f} ms waited "
+                 "(longest {:.2f} ms), {:.0f} KiB",
+                 count / seconds, total_ns / 1e6 / seconds, max_ns / 1e6,
+                 total_bytes / 1024.0 / seconds);
+        window_start = now;
+        count = total_ns = max_ns = total_bytes = 0;
+    }
+
     VideoCore::RasterizerDownloadArea OnCPURead(DAddr addr, u64 size) {
         auto raster_area = renderer->ReadRasterizer()->GetFlushArea(addr, size);
         if (raster_area.preemtive) {
@@ -250,6 +282,7 @@ struct GPU::Impl {
                      raster_area.start_address, raster_area.end_address,
                      reads.load(std::memory_order_relaxed));
         }
+        const auto wait_start = std::chrono::steady_clock::now();
         const u64 fence = RequestSyncOperation([this, raster_area]() {
             // Apply collected guest writes before downloading GPU data over guest memory.
             InvalidateGPUCache();
@@ -257,6 +290,8 @@ struct GPU::Impl {
         });
         gpu_thread.TickGPU(is_async);
         WaitForSyncOperation(fence);
+        ReportCpuReadWait(std::chrono::steady_clock::now() - wait_start,
+                          raster_area.end_address - raster_area.start_address);
         return raster_area;
     }
 
