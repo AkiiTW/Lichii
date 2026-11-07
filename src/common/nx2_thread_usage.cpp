@@ -89,11 +89,28 @@ void Monitor() {
                 const double percent =
                     static_cast<double>(total - std::min(total, entry.last)) / wall_100ns * 100.0;
                 entry.last = total;
+                named += percent;
+                // Threads of a stopped game are counted one last time, then forgotten: a game
+                // started again in the same session would otherwise show every name twice.
+                DWORD exit_code{};
+                if (GetExitCodeThread(entry.handle, &exit_code) && exit_code != STILL_ACTIVE) {
+                    if (percent > 0.0) {
+                        by_name[entry.name].first += percent;
+                    }
+                    continue;
+                }
                 auto& [sum, count] = by_name[entry.name];
                 sum += percent;
                 ++count;
-                named += percent;
             }
+            std::erase_if(entries, [](const Entry& entry) {
+                DWORD exit_code{};
+                if (GetExitCodeThread(entry.handle, &exit_code) && exit_code != STILL_ACTIVE) {
+                    CloseHandle(entry.handle);
+                    return true;
+                }
+                return false;
+            });
         }
         std::vector<std::pair<double, std::string>> sorted;
         for (const auto& [name, usage] : by_name) {
