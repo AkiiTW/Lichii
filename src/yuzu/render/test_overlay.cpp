@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
+#include <QFontMetrics>
 #include <QPainter>
 #include <QPainterPath>
 
@@ -15,6 +17,25 @@
 namespace {
 
 constexpr int TickMs = 250;
+constexpr int PanelWidth = 380;
+constexpr int BaseHeight = 112;
+
+QFont PurposeFont(QFont font) {
+    font.setPixelSize(12);
+    font.setBold(false);
+    return font;
+}
+
+/// Height of the purpose text (EDEN_NX2_TEST_PURPOSE), wrapped to the panel, plus its gap.
+int PurposeHeight(const QFont& base, const std::string& purpose) {
+    if (purpose.empty()) {
+        return 0;
+    }
+    const QFontMetrics metrics(PurposeFont(base));
+    const QRect bounds = metrics.boundingRect(QRect(0, 0, PanelWidth - 32, 1000),
+                                              Qt::TextWordWrap, QString::fromStdString(purpose));
+    return bounds.height() + 8;
+}
 constexpr double DoneShownSeconds = 60.0;
 
 QString Clock(double seconds) {
@@ -29,7 +50,7 @@ TestOverlay::TestOverlay(MainWindow* parent) : QWidget(parent), m_mainWindow{par
     setAttribute(Qt::WA_TransparentForMouseEvents);
     setAttribute(Qt::WA_ShowWithoutActivating);
     setWindowFlags(Qt::FramelessWindowHint | Qt::Tool | Qt::WindowDoesNotAcceptFocus);
-    setFixedSize(340, 112);
+    setFixedSize(PanelWidth, BaseHeight + PurposeHeight(font(), Nx2TestWindow::Get().purpose));
     connect(&m_timer, &QTimer::timeout, this, &TestOverlay::Tick);
     connect(parent, &MainWindow::positionChanged, this, [this](const QPoint&) { Place(); });
     m_timer.start(TickMs);
@@ -58,6 +79,10 @@ void TestOverlay::Tick() {
             m_timer.stop();
             return;
         }
+    }
+    const int wanted_height = BaseHeight + PurposeHeight(font(), status.purpose);
+    if (height() != wanted_height) {
+        setFixedSize(PanelWidth, wanted_height);
     }
     Place();
     if (!isVisible()) {
@@ -116,17 +141,28 @@ void TestOverlay::paintEvent(QPaintEvent*) {
     painter.setPen(accent);
     painter.drawText(QRectF(16, 10, width() - 32, 20), Qt::AlignLeft | Qt::AlignVCenter, head);
 
+    // What the test is for, wrapped under the title; the rest of the panel moves down by its height.
+    const int purpose_height = PurposeHeight(font, status.purpose);
+    if (purpose_height > 0) {
+        painter.setFont(PurposeFont(font));
+        painter.setPen(QColor(205, 205, 210));
+        painter.drawText(QRectF(16, 32, width() - 32, purpose_height - 8),
+                         Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                         QString::fromStdString(status.purpose));
+    }
+    const int dy = purpose_height;
+
     font.setPixelSize(15);
     font.setBold(true);
     painter.setFont(font);
     painter.setPen(Qt::white);
-    painter.drawText(QRectF(16, 34, width() - 32, 24), Qt::AlignLeft | Qt::AlignVCenter,
+    painter.drawText(QRectF(16, 34 + dy, width() - 32, 24), Qt::AlignLeft | Qt::AlignVCenter,
                      painter.fontMetrics().elidedText(line, Qt::ElideRight, width() - 32));
 
     font.setPixelSize(22);
     font.setBold(true);
     painter.setFont(font);
-    painter.drawText(QRectF(16, 60, width() - 32, 30), Qt::AlignLeft | Qt::AlignVCenter, count);
+    painter.drawText(QRectF(16, 60 + dy, width() - 32, 30), Qt::AlignLeft | Qt::AlignVCenter, count);
 
     const QRectF bar(16, height() - 16, width() - 32, 5);
     painter.fillRect(bar, QColor(255, 255, 255, 40));

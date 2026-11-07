@@ -21,6 +21,7 @@ struct Config {
     double seconds = 0.0;
     std::string prepare;
     std::string label;
+    std::string purpose;
 };
 
 std::mutex mutex;
@@ -49,6 +50,7 @@ Config ReadConfig() {
                                 sampling ? EnvSeconds("EDEN_NX2_SAMPLE_SECONDS", 30.0) : 0.0);
     result.prepare = EnvText("EDEN_NX2_TEST_PREPARE", "Va au marché, devant la fontaine");
     result.label = EnvText("EDEN_NX2_TEST_LABEL", "Tourne autour de la fontaine");
+    result.purpose = EnvText("EDEN_NX2_TEST_PURPOSE", "");
     return result;
 }
 
@@ -69,6 +71,9 @@ void Start() {
     }
     LOG_INFO(Common, "Nx2TestWindow: recording from {:.0f} s to {:.0f} s after load ({})",
              read.start, read.start + read.seconds, read.label);
+    if (!read.purpose.empty()) {
+        LOG_INFO(Common, "Nx2TestWindow: purpose: {}", read.purpose);
+    }
     std::thread{[read, my_generation] {
         std::this_thread::sleep_for(std::chrono::duration<double>(read.start));
         if (generation.load() != my_generation) {
@@ -98,6 +103,7 @@ Status Get() {
     const double elapsed = std::chrono::duration<double>(Clock::now() - origin).count();
     status.prepare = config.prepare;
     status.label = config.label;
+    status.purpose = config.purpose;
     status.seconds_total = config.seconds;
     if (elapsed < config.start) {
         status.phase = Phase::Waiting;
