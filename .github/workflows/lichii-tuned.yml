@@ -4,6 +4,8 @@ name: lichii-tuned
 # YUZU_BUILD_PRESET. Three flavors, uploaded as artifacts (no release is made):
 #   normal  the PGO build;
 #   lto     the same with ThinLTO;
+#   symbols the normal build plus CodeView line tables and lichii.pdb next to the exe, so the
+#           built-in sampler (EDEN_NX2_SAMPLE) names functions on the player's PC;
 #   pgogen  a build with the GPU emulation instrumented (-fprofile-generate on video_core and
 #           shader_recompiler) that writes default_*.profraw next to
 #           lichii.exe when it exits normally.
@@ -42,7 +44,7 @@ jobs:
       matrix:
         # lto stays out of the matrix: the ThinLTO + PGO binary broke Ocarina at boot (guest
         # abort 12 s in, read of 0x2) where the same commit's normal build ran.
-        flavor: [normal, pgogen]
+        flavor: [normal, pgogen, symbols]
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 3000M
@@ -167,6 +169,11 @@ jobs:
           if [ '${{ matrix.flavor }}' = 'pgogen' ]; then
             linker="$linker -fprofile-generate"
           fi
+          if [ '${{ matrix.flavor }}' = 'symbols' ]; then
+            # Line tables only: the same optimized code, with names and lines for dbghelp.
+            profile="$profile -gline-tables-only -gcodeview"
+            linker="$linker -Wl,--pdb="
+          fi
           cmake -S . -B build/release -G Ninja "${lto[@]}" -DLICHII_PGO_GENERATE_GPU=$gpu_pgo \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
@@ -214,6 +221,7 @@ jobs:
           cd build/release/bin
           test -f lichii.exe
           test -f eden-cli.exe
+          if [ '${{ matrix.flavor }}' = 'symbols' ]; then test -f lichii.pdb; fi
           windeployqt6 --no-translations --no-compiler-runtime --no-opengl-sw \
             --no-system-dxc-compiler --no-system-d3d-compiler lichii.exe
           deps() {

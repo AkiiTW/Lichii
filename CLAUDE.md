@@ -1,0 +1,45 @@
+# Lichii V3-perso — notes de travail (Zelda Ocarina of Time remake, 0400486024DEC000)
+
+Branche `claude/v3-zen2` du fork AkiiTW/Lichii (base : tag `frizti-v3`, 00ef0ea6c).
+Builds : workflow `.github/workflows/lichii-tuned.yml` (MSYS2 clang zen2, saveurs normal / pgogen).
+L'utilisateur remplace seulement `lichii.exe` dans `Desktop\lichii-windows-zen2-normal-43515fb…`.
+PC : Ryzen 7 3800X (2 CCX : 0xff / 0xff00), RTX 5060 Ti 16 Go, 24 Go RAM, Windows 11.
+Objectif : 30 FPS stables partout (mode 30 FPS par défaut), puis au-delà.
+
+## Réglages / fichiers
+- `%APPDATA%\eden\nx2_switches.txt` surcharge celui à côté de l'exe, qui surcharge `BuiltinSwitches` (src/yuzu/main.cpp).
+  Actuellement : `EDEN_NX2_THREAD_USAGE=1`, `EDEN_NX2_GPU_PROFILE=1` (mesures).
+- Journaux : `%APPDATA%\eden\log\eden_log.txt` (+ `.old.txt` = lancement précédent de Lichii).
+- Mods : `%APPDATA%\eden\load\0400486024DEC000\` : `Dynamic-fps` (exefs, ne pas toucher),
+  `OoT Perf - Ombres PNJ proches` (GARDER : LocalDepthShadowParam NPCFadeStart 25→8, NPCFadeEnd 30→10),
+  `OoT Perf - Ombres 2 cascades` / `1 cascade` = À ABANDONNER (cascades≠3 → bug lumière arc-en-ciel dans la plaine, aucun gain).
+- Dump du jeu : `C:\D\The Legend of Zelda Ocarina of Time [0400486024dec000][v131072]\{base,updates/131072}\romfs`.
+  Outils BYML/zstd : scratchpad `oot/byml.py`, `oot/zs.py`, `oot/bympatch.py` (patch en place, taille identique → pas de RESTBL).
+
+## Commits V3-perso
+- 19538b31a pacer MinGW (#pragma → dwmapi), 43515fb50 30 FPS par défaut, eba617204 `EDEN_NX2_THREAD_USAGE`.
+- Déjà dedans : fusion des clés de pipeline (attributs non lus, version de pilote), PREFLUSH retiré (flashs blancs).
+
+## Mesures du 2026-11-07 (build eba6172, docked, 1x, FSR3)
+Protocole : marché (tours de la fontaine caméra comme DT) puis course dans la plaine en regardant partout.
+- Rendus/image au marché : A sans mod ~2 270 ; B PNJ proches ~2 100 ; C +2 cascades ~2 100 (bug) ; E portable ~2 100.
+  → les fichiers du jeu ne donneront plus grand-chose. Le levier est Lichii.
+- Marché ≈ 27-29 FPS, ~60 000 draws/s, 2,9 M méthodes/s, 4 500-6 000 render passes/s.
+- Charge threads (100 % = 1 CPU logique) : GPU (front) 95 %, GPUBack 85 %, CPUCore_x 40-60 %, **HostTiming x2 98 % en permanence**.
+- Front : 520 ms/s « split drain » = attente du back (fence release 288 ms à 1 463/s, macro dma read 216 ms à 2 010/s),
+  macro 178 ms, resume pending 188 ms.
+- **Back (goulot, ~880 ms/s)** : bind stage buffers 184 ms (125 k/s ≈ 1,5 µs), method 163 ms, other 109 ms,
+  update buffers 62, draw 52, flush work 48, compute 46, pipeline lookup 35, fill image views 30, read handles 25,
+  clear 25, dynamic state 19, fence 19. UBO comparés en place : 192 k inchangés / 109 k changés (par fenêtre).
+  Méthodes chaudes : 0x8e4-0x8e6 (cb_data), 0x904/0x924 (cb bind), 0x586/0x585 (draw begin/end), 0x5f7/0x5f8.
+- Present jamais bloqué par la fence GPU hôte → la carte graphique n'est pas le frein.
+- Petit bug : après relance du jeu dans la même session Lichii, THREAD_USAGE ne logue plus les threads nommés.
+
+## Pistes (ordre)
+1. `BindHostStageBuffers` (buffer_cache) : coût par UBO ; sauter plus vite les UBO inchangés / éviter le travail répété par draw.
+2. Attentes front→back aux fence release (1 463/s) et macro DMA reads.
+3. Threads HostTiming à 98 % (attente active ?) → libérer deux CPU logiques.
+4. Options V3 désactivées par défaut (EDEN_NX2_PERF_ON) : clean_words, index_rebind, bounds, submit_budget, fence_flush, fragment_barrier, front_sleep, async_pipelines.
+
+## Déjà essayé sans gain
+TC_NO_CAP (pire), DMA_READ_WAIT=track (pire), PREFLUSH=1 (flashs blancs), mods cascades (bug), mode portable (≈0).
