@@ -104,3 +104,9 @@ Suite : PGO réentraîné sur le code actuel ; « acquire learning » et « fram
 ## PGO réentraîné (2026-11-07 20:28, c733486) : neutre, gardé
 Profil marché + plaine + Kokiri sur ca4f7d0. Marché (4 derniers blocs) 40,9 ms/image vs 40,4-41,9 avec l'ancien profil ; travail du back
 par rendu 13,8 µs vs 14,1-14,3. Dans le bruit. Un A/B d'un seul essai ne voit pas moins de ~5 % : faire plusieurs essais par côté.
+
+## Réutilisation des images, version 2 (2026-11-07 21:29, a099ef5) : GARDÉE
+Zones (d9bf5d9) : « clear » = création des cibles de rendu (image create 136 µs chacune, 52 ms/s ; tc tick 80 ms/s).
+Réservoir LRU 512 Mio / 32 par forme : 84 % réutilisées, image create 52 → 15, entretien du cache ~164 → ~90 ms/s,
+marché 38,7 → 35,0 ms/image (début de journée 48,6). Joueur : « meilleures perfs, 30 quasi tout le temps ». Petits drops
+quand l'eau de la fontaine éclabousse Link. Reste : tc collect 26, image free 18, view create 17, join 13 ms/s.
