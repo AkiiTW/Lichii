@@ -146,4 +146,17 @@ inline void NoteFrameTime(long long interval_ns) {
     g_frame_times[bucket].fetch_add(1, std::memory_order_relaxed);
 }
 
+/// What happened between two shown frames, for the slow-frame log (vk_host_pacer.cpp): running
+/// totals the pacer reads at each frame shown and logs the difference for frames over 60 ms.
+struct HitchCounters {
+    std::atomic<u64> readback_wait_ns{};  ///< Guest CPU reads of GPU-written memory (gpu.cpp)
+    std::atomic<u64> readbacks{};
+    std::atomic<u64> texture_uploads{};   ///< Images filled from guest memory
+    std::atomic<u64> texture_upload_bytes{};
+    std::atomic<u64> images_created{};
+    std::atomic<u64> pipelines_built{};   ///< Graphics and compute pipelines made
+    std::atomic<u64> collector_deletes{}; ///< Images the texture cache collector removed
+};
+inline HitchCounters g_hitch;
+
 } // namespace VideoCommon::Nx2Perf
