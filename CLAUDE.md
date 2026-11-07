@@ -110,3 +110,7 @@ Zones (d9bf5d9) : « clear » = création des cibles de rendu (image create 136 
 Réservoir LRU 512 Mio / 32 par forme : 84 % réutilisées, image create 52 → 15, entretien du cache ~164 → ~90 ms/s,
 marché 38,7 → 35,0 ms/image (début de journée 48,6). Joueur : « meilleures perfs, 30 quasi tout le temps ». Petits drops
 quand l'eau de la fontaine éclabousse Link. Reste : tc collect 26, image free 18, view create 17, join 13 ms/s.
+
+## Panneau de test : toujours dire à quoi sert le test (demande du joueur, 2026-11-07)
+Dans chaque fichier de réglages de test : `EDEN_NX2_TEST_PURPOSE=But : …` (phrase courte en français, accents OK), affichée sous le titre
+du panneau (c79d33c). Fichiers de réglages : scratchpad outputs/appdata_switches*.txt → %APPDATA%\eden\nx2_switches.txt.
