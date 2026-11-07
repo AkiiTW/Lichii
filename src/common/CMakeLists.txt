@@ -46,6 +46,8 @@ add_library(
     dkb_cpu_trace.cpp
     dkb_cpu_trace.h
     nx2_placement.cpp
+    nx2_thread_usage.cpp
+    nx2_thread_usage.h
     nx2_placement.h
     nx2_sampler.cpp
     nx2_sampler.h
