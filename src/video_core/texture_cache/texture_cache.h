@@ -442,6 +442,15 @@ void TextureCache<P>::TickFrame() {
                          "(EDEN_NX2_TC_RT_NO_UPLOAD)",
                  render_target_uploads_skipped);
         render_target_uploads_skipped = 0;
+        LOG_INFO(HW_GPU, "Texture cache last 600 frames: depth images marked CPU-modified by a "
+                         "guest memory write {} (writes <=4K {}, <=64K {}, <=1M {}, larger {}; whole "
+                         "image {}), by an unmap {}; made with an older image to copy from {}, sparse {}",
+                 depth_cpu_marks[0], depth_write_sizes[0], depth_write_sizes[1],
+                 depth_write_sizes[2], depth_write_sizes[3], depth_whole_writes, depth_cpu_marks[1],
+                 depth_cpu_marks[2], depth_cpu_marks[3]);
+        depth_cpu_marks = {};
+        depth_write_sizes = {};
+        depth_whole_writes = 0;
         uploads_by_kind = {};
         upload_bytes_by_kind = {};
         uploads_gpu_written = 0;
@@ -953,6 +962,15 @@ void TextureCache<P>::WriteMemory(DAddr cpu_addr, size_t size) {
             return;
         }
         image.flags |= ImageFlagBits::CpuModified;
+        if (VideoCore::Surface::GetFormatType(image.info.format) !=
+            VideoCore::Surface::SurfaceType::ColorTexture) {
+            ++depth_cpu_marks[0];
+            ++depth_write_sizes[size <= 4_KiB ? 0 : size <= 64_KiB ? 1 : size <= 1_MiB ? 2 : 3];
+            depth_whole_writes += cpu_addr <= image.cpu_addr &&
+                                          cpu_addr + size >= image.cpu_addr + image.guest_size_bytes
+                                      ? 1
+                                      : 0;
+        }
         if (True(image.flags & ImageFlagBits::Tracked)) {
             UntrackImage(image, image_id);
         }
@@ -1079,6 +1097,10 @@ void TextureCache<P>::UnmapGPUMemory(size_t as_id, GPUVAddr gpu_addr, size_t siz
         Image& image = slot_images[id];
         if (False(image.flags & ImageFlagBits::CpuModified)) {
             image.flags |= ImageFlagBits::CpuModified;
+            depth_cpu_marks[1] += VideoCore::Surface::GetFormatType(image.info.format) !=
+                                          VideoCore::Surface::SurfaceType::ColorTexture
+                                      ? 1
+                                      : 0;
             if (True(image.flags & ImageFlagBits::Tracked)) {
                 UntrackImage(image, id);
             }
@@ -2803,6 +2825,14 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
     }();
     const bool depth_format =
         VideoCore::Surface::GetFormatType(new_info.format) != VideoCore::Surface::SurfaceType::ColorTexture;
+    // Depth images the skip below leaves alone (EDEN_NX2_TC_LOG counts them).
+    if (depth_format) {
+        if (!join_copies_to_do.empty()) {
+            ++depth_cpu_marks[2];
+        } else if (True(new_image.flags & ImageFlagBits::Sparse)) {
+            ++depth_cpu_marks[3];
+        }
+    }
     if (rt_no_upload != 0 && (finding_render_target || (rt_no_upload >= 2 && depth_format)) &&
         join_copies_to_do.empty() && False(new_image.flags & ImageFlagBits::Sparse)) {
         new_image.flags &= ~ImageFlagBits::CpuModified;
