@@ -76,6 +76,8 @@ enum class Zone : u32 {
     TcTick,       ///< Texture cache end-of-frame work outside the zones below
     ImageFree,    ///< Destroying images the GPU is done with (or pooling their host image)
     TcCollect,    ///< Texture cache collector, early render target drops included
+    ImageDelete,  ///< Removing an image from the cache (DeleteImage, framebuffers apart)
+    FramebufferRemove, ///< Looking for and dropping the framebuffers of a deleted image's views
     Count,
 };
 
@@ -90,7 +92,7 @@ inline constexpr std::array<const char*, static_cast<size_t>(Zone::Count)> zone_
     "writer wait", "list submit wait", "list GPU wait",
     "ubo fast",      "ubo classic",   "ubo bank",       "storage binds",  "texbuf binds",
     "clear targets", "image join",    "image create",   "view create",    "framebuffer create",
-    "tc tick",       "image free",    "tc collect",
+    "tc tick",       "image free",    "tc collect",     "image delete",   "framebuffer remove",
 };
 
 // Read once, when the GPU thread starts (Initialize): Enabled() runs several times per method
