@@ -62,3 +62,12 @@ Il travaille sur les attentes du front (lectures DMA des macros), nous sur le co
   des textures du marché dans les premières minutes après le lancement.
 - Nouvelle piste : sortir les envois de textures de GPUBack (thread dédié) ou réduire leur coût CPU.
 - Le protocole à fenêtre fixe rend les A/B comparables (même phase de chargement).
+
+## Détail de « bind stage buffers » (2026-11-07 15:05, build 9842699, même fenêtre)
+Par seconde au marché (~150 ms au total) :
+- **storage binds ~66 ms** (~34 k/s, ~2 µs chacun) : SynchronizeBuffer sur toute la taille + BindMultiRangeStorage.
+- **ubo bank ~33 ms** (~4 000/s, ~8 µs chacun, **~180 Mo/s** de banques 64 Kio ré-envoyées une fois par image).
+- ubo fast ~21 ms (~240 k/s, ~500 o, 0,09 µs : déjà efficace) ; ubo classic ~13 ms (~46 k/s, ~28 Ko, ~900/s avec données CPU).
+- reste de la zone ~13 ms. Texture upload toujours ~80-200 ms/s (~90-180/s) dans cette fenêtre.
+Essais : 3) EDEN_NX2_PERF_ON=clean_words (aucune recompilation) ; ensuite code : comparer la banque avant de la ré-envoyer,
+sous-zones dans TextureUpload, compteurs de taille des storage buffers.
