@@ -154,6 +154,10 @@ void TextureCache<P>::RunGarbageCollector() {
         });
         for (const ImageId image_id : stale) {
             Image& image = slot_images[image_id];
+            if constexpr (requires { image.MarkPoolable(); }) {
+                // EDEN_NX2_TC_RT_REUSE: its host image serves the next target of the same shape.
+                image.MarkPoolable();
+            }
             if (True(image.flags & ImageFlagBits::Tracked)) {
                 UntrackImage(image, image_id);
             }
@@ -476,6 +480,13 @@ void TextureCache<P>::TickFrame() {
                          "(EDEN_NX2_TC_RT_EVICT)",
                  transient_target_deletes);
         transient_target_deletes = 0;
+        if constexpr (requires { runtime.pooled_image_hits; }) {
+            LOG_INFO(HW_GPU, "Texture cache last 600 frames: host images reused {}, made new for a "
+                             "poolable shape {}, {} MiB pooled (EDEN_NX2_TC_RT_REUSE)",
+                     runtime.pooled_image_hits, runtime.pooled_image_misses,
+                     runtime.image_pool_bytes >> 20);
+            runtime.pooled_image_hits = runtime.pooled_image_misses = 0;
+        }
         LOG_INFO(HW_GPU, "Texture cache last 600 frames: depth images marked CPU-modified by a "
                          "guest memory write {} (writes <=4K {}, <=64K {}, <=1M {}, larger {}; whole "
                          "image {}), by an unmap {}; made with an older image to copy from {}, sparse {}",

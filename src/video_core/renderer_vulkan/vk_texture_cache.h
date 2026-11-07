@@ -11,6 +11,8 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <unordered_map>
+#include <vector>
 
 #include "video_core/texture_cache/texture_cache_base.h"
 
@@ -227,6 +229,21 @@ public:
     std::span<const VkFormat> ViewFormats(PixelFormat format) {
         return view_formats[static_cast<std::size_t>(format)];
     }
+
+    /// EDEN_NX2_TC_RT_REUSE: host images of render targets dropped by EDEN_NX2_TC_RT_EVICT are
+    /// kept by shape (pool key) and handed to the next image of that shape instead of a new one.
+    [[nodiscard]] vk::Image TakePooledImage(u64 key);
+    /// Keeps `image` for reuse; returns false (the caller destroys it) when the pool is full.
+    bool PoolImage(u64 key, u64 bytes, vk::Image& image);
+    [[nodiscard]] static bool ImageReuseEnabled();
+    u64 pooled_image_hits = 0;   ///< Images taken from the pool (logged with the texture cache)
+    u64 pooled_image_misses = 0; ///< Pool keys asked for with nothing pooled
+    struct PooledImage {
+        vk::Image image;
+        u64 bytes;
+    };
+    std::unordered_map<u64, std::vector<PooledImage>> image_pool;
+    u64 image_pool_bytes = 0;
 
     void BarrierFeedbackLoop();
 
@@ -661,6 +678,13 @@ private:
 
     vk::Image original_image;
     vk::Image scaled_image;
+
+    /// Render target whose host image may go back to the runtime's pool (EDEN_NX2_TC_RT_REUSE).
+    void MarkPoolable() noexcept {
+        poolable = true;
+    }
+    u64 pool_key = 0; ///< Shape key when this image's host image can be pooled, else 0
+    bool poolable = false;
 
     vk::Buffer compute_unswizzle_buffer;
     VkDeviceSize compute_unswizzle_buffer_size = 0;
