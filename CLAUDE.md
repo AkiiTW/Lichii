@@ -100,3 +100,7 @@ Suite : réutiliser les images hôtes par forme (~8 000 créations / 600 images)
 EDEN_NX2_TC_RT_REUSE (ca4f7d0 ; 0459584 ne faisait rien, MarkPoolable privé) : ~35 % des cibles réutilisées, réservoir plein à 1 Gio,
 aucun gain (42,5 ms/image ; relance du code du test 9 : 40,8 ms → bruit ±2-3 ms), VRAM +1 Gio. Retiré des réglages.
 Suite : PGO réentraîné sur le code actuel ; « acquire learning » et « frames-ahead 2 » de Frizti dès publication.
+
+## PGO réentraîné (2026-11-07 20:28, c733486) : neutre, gardé
+Profil marché + plaine + Kokiri sur ca4f7d0. Marché (4 derniers blocs) 40,9 ms/image vs 40,4-41,9 avec l'ancien profil ; travail du back
+par rendu 13,8 µs vs 14,1-14,3. Dans le bruit. Un A/B d'un seul essai ne voit pas moins de ~5 % : faire plusieurs essais par côté.
