@@ -154,6 +154,7 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     std::array<u64, 4> uploads_by_kind{};
     std::array<u64, 4> upload_bytes_by_kind{};
     u64 uploads_gpu_written{};
+    u64 render_target_uploads_skipped{}; ///< EDEN_NX2_TC_RT_NO_UPLOAD (last 600 frames)
 
     static constexpr s64 DEFAULT_EXPECTED_MEMORY = 1_GiB + 125_MiB;
     static constexpr s64 DEFAULT_CRITICAL_MEMORY = 1_GiB + 625_MiB;
@@ -596,6 +597,7 @@ private:
     /// True while a clear binds its render targets (UpdateRenderTargets(true)), so JoinImages can
     /// skip the upload of a new target the clear overwrites whole.
     bool clearing_render_targets = false;
+    bool finding_render_target = false; ///< FindRenderTargetView is looking up its image
     bool is_rescaling = false;
     u64 total_used_memory = 0;
     u64 minimum_memory;
