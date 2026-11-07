@@ -15,6 +15,7 @@
 #include "common/settings_enums.h"
 #include "frontend_common/settings_generator.h"
 #include "render/performance_overlay.h"
+#include "render/test_overlay.h"
 #ifdef HAS_RESHADE
 #include "configuration/configure_post_processing.h"
 #include "video_core/post_processing/fx_preset.h"
@@ -2363,6 +2364,11 @@ bool MainWindow::OnShutdownBegin() {
         perf_overlay->deleteLater();
         perf_overlay = nullptr;
     }
+    if (test_overlay) {
+        test_overlay->hide();
+        test_overlay->deleteLater();
+        test_overlay = nullptr;
+    }
 
     QtCommon::system->SetShuttingDown(true);
     status_bar_update_timer.stop();
@@ -3410,6 +3416,11 @@ void MainWindow::OnLoadComplete() {
 
     connect(perf_overlay, &PerformanceOverlay::closed, perf_overlay,
             [this]() { ui->action_Show_Performance_Overlay->setChecked(false); });
+
+    // A timed play test (EDEN_NX2_TEST_* or EDEN_NX2_SAMPLE): its countdown, top right.
+    if (TestOverlay::IsWanted()) {
+        test_overlay = new TestOverlay(this);
+    }
 }
 
 void MainWindow::OnExecuteProgram(std::size_t program_index) {
