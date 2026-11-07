@@ -114,3 +114,10 @@ quand l'eau de la fontaine éclabousse Link. Reste : tc collect 26, image free 1
 ## Panneau de test : toujours dire à quoi sert le test (demande du joueur, 2026-11-07)
 Dans chaque fichier de réglages de test : `EDEN_NX2_TEST_PURPOSE=But : …` (phrase courte en français, accents OK), affichée sous le titre
 du panneau (c79d33c). Fichiers de réglages : scratchpad outputs/appdata_switches*.txt → %APPDATA%\eden\nx2_switches.txt.
+
+## Apports zortos build 116 (2026-11-08 00:24, 9465605) : GARDÉS
+Pris : #412 (moins de comptabilité du back), #446 (canaux sondés toutes les 50 µs), #174, #481 (RangeSet), #475/#582 + #521/#583
+(HMMA sur matrices coopératives : « Guest tensor operations run on cooperative matrices » sur la 5060 Ti), #478/#580, #250, #351
+(sondes de lumière au-delà de 64 Mio = brume blanche de la plaine). Laissés : DLSS (#606, Streamline), #616, #413 (déjà équivalent),
+#178, #641 (17 k lignes : attendre le portage de Frizti). Marché : 33,6 ms/image (blocs 33,4-33,9 = quasi 30 FPS verrouillés),
+0 image > 100 ms (max 73 ms), attentes de relecture 150-195 → 108-145 ms/s, 61 k rendus/s. Joueur : « olala c'est très bon ».
