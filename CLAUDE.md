@@ -81,3 +81,7 @@ visuel vu par l'utilisateur (marché). À vérifier un jour en forêt Kokiri (bu
   replay_route.py, histogramme des lows 1 %/0,1 %, PGO réentraîné sur marché + plaine. Ports zortos : #465, #408, #463,
   #418, #411, #415, #232, #395/#337/#353. **Son point 13 = notre piste banques** (vérif. par bind ~10 % du back chez lui) :
   partager nos chiffres BANK_COMPARE / clean_words avec lui.
+
+## Carnet partagé
+https://github.com/AkiiTW/lichii-oot-notes (FINDINGS.md, WORK.md) : y ajouter chaque trouvaille ; lire les ajouts de Frizti.
+Copie locale : scratchpad/notes (remote origin).
