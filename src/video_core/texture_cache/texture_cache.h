@@ -438,6 +438,10 @@ void TextureCache<P>::TickFrame() {
                  uploads_by_kind[0], upload_bytes_by_kind[0] >> 20, uploads_by_kind[1],
                  upload_bytes_by_kind[1] >> 20, uploads_by_kind[2], upload_bytes_by_kind[2] >> 20,
                  uploads_by_kind[3], upload_bytes_by_kind[3] >> 20, uploads_gpu_written);
+        LOG_INFO(HW_GPU, "Texture cache last 600 frames: {} new render targets not uploaded "
+                         "(EDEN_NX2_TC_RT_NO_UPLOAD)",
+                 render_target_uploads_skipped);
+        render_target_uploads_skipped = 0;
         uploads_by_kind = {};
         upload_bytes_by_kind = {};
         uploads_gpu_written = 0;
@@ -2783,7 +2787,27 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
             return false;
         }
     };
-    if (overwritten_by_clear()) {
+    // EDEN_NX2_TC_RT_NO_UPLOAD=1: a render target made from scratch (no older image to copy
+    // from) starts with undefined contents instead of the guest memory under it. Ocarina's market
+    // recreates its screen-sized targets and 384x384 shadow depths every frame or two in memory
+    // other targets used (~200 a second); uploading that memory was ~9 GB per 600 frames, 6.6 GB
+    // of it into depth buffers the GPU then overwrites. Tracked from here on, so a CPU write still
+    // marks it for upload.
+    static const bool rt_no_upload = [] {
+        const char* value = std::getenv("EDEN_NX2_TC_RT_NO_UPLOAD");
+        const bool on = value != nullptr && value[0] == '1';
+        LOG_INFO(HW_GPU, "EDEN_NX2_TC_RT_NO_UPLOAD: {}", on ? "on" : "off");
+        return on;
+    }();
+    if (rt_no_upload && finding_render_target && join_copies_to_do.empty() &&
+        False(new_image.flags & ImageFlagBits::Sparse)) {
+        new_image.flags &= ~ImageFlagBits::CpuModified;
+        if (False(new_image.flags & ImageFlagBits::Tracked)) {
+            TrackImage(new_image, new_image_id);
+        }
+        runtime.TransitionImageLayout(new_image);
+        ++render_target_uploads_skipped;
+    } else if (overwritten_by_clear()) {
         // Stays CpuModified: UpdateRenderTargets' PrepareImage drops the upload only when
         // IsFullClear agrees the clear covers the whole image, and uploads it otherwise.
         runtime.TransitionImageLayout(new_image);
@@ -3083,11 +3107,13 @@ ImageViewId TextureCache<P>::FindRenderTargetView(const ImageInfo& info, GPUVAdd
     }
     ImageId image_id{};
     bool delete_state = has_deleted_images;
+    finding_render_target = true;
     do {
         has_deleted_images = false;
         image_id = FindOrInsertImage(info, gpu_addr);
         delete_state |= has_deleted_images;
     } while (has_deleted_images);
+    finding_render_target = false;
     has_deleted_images = delete_state;
     if (!image_id) {
         return NULL_IMAGE_VIEW_ID;
