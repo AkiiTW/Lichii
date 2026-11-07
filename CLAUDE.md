@@ -54,3 +54,11 @@ Il travaille sur les attentes du front (lectures DMA des macros), nous sur le co
   recouvrement octet par octet (pas d'attente pour une écriture voisine sur la même page) ; ensuite suivre
   les plages écrites par les envois inline.
 → Récupérer ses commits dès leur publication (gain estimé chez nous : jusqu'à ~+15 %, trous du back ~130 ms/s).
+
+## Test de référence avec fenêtre (2026-11-07 14:55, build d8e4fe2, marché 150-270 s après chargement)
+- ~21-22 FPS (frames 42-47 ms), ~45-48 k draws/s, ~2 100 draws/image ; GPUBack ~910 ms/s.
+- Coûts par appel identiques au run E (20 min de jeu, 28-30 FPS). Différence : **texture upload 100-160 ms/s
+  (~115/s, ~1 ms chacun)** et clears 55 ms/s (40 µs chacun vs 13) pendant toute la fenêtre → chargement
+  des textures du marché dans les premières minutes après le lancement.
+- Nouvelle piste : sortir les envois de textures de GPUBack (thread dédié) ou réduire leur coût CPU.
+- Le protocole à fenêtre fixe rend les A/B comparables (même phase de chargement).
