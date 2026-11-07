@@ -487,6 +487,10 @@ void TextureCache<P>::TickFrame() {
                          "(EDEN_NX2_TC_RT_EVICT)",
                  transient_target_deletes);
         transient_target_deletes = 0;
+        LOG_INFO(HW_GPU, "Texture cache last 600 frames: {} images deleted, {} overlaps and aliases "
+                         "to unlink",
+                 images_deleted, delete_overlap_entries);
+        delete_overlap_entries = 0;
         if constexpr (requires { runtime.pooled_image_hits; }) {
             LOG_INFO(HW_GPU, "Texture cache last 600 frames: host images reused {}, made new for a "
                              "poolable shape {}, {} MiB pooled, {} pooled images destroyed to stay in "
@@ -3676,9 +3680,15 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
             render_targets.depth_buffer_id = ImageViewId{};
         }
     }
-    RemoveImageViewReferences(image_view_ids);
+    {
+        VideoCommon::Nx2Profile::Scope views_scope{VideoCommon::Nx2Profile::Zone::DeleteViews};
+        RemoveImageViewReferences(image_view_ids);
+    }
     RemoveFramebuffers(image_view_ids);
 
+    {
+    VideoCommon::Nx2Profile::Scope overlaps_scope{VideoCommon::Nx2Profile::Zone::DeleteOverlaps};
+    delete_overlap_entries += image.aliased_images.size() + image.overlapping_images.size();
     for (const AliasedImage& alias : image.aliased_images) {
         ImageBase& other_image = slot_images[alias.id];
         [[maybe_unused]] const size_t num_removed_aliases =
@@ -3698,6 +3708,8 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
         ASSERT_MSG(num_removed_overlaps == 1, "Invalid number of removed overlapps: {}",
                    num_removed_overlaps);
     }
+    }
+    VideoCommon::Nx2Profile::Scope sentence_scope{VideoCommon::Nx2Profile::Zone::DeleteSentence};
     for (const ImageViewId image_view_id : image_view_ids) {
         if (!immediate_delete) {
             sentenced_image_view.Push(std::move(slot_image_views[image_view_id]));
