@@ -155,6 +155,13 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     std::array<u64, 4> upload_bytes_by_kind{};
     u64 uploads_gpu_written{};
     u64 render_target_uploads_skipped{}; ///< EDEN_NX2_TC_RT_NO_UPLOAD (last 600 frames)
+    /// EDEN_NX2_TC_LOG: why depth/stencil images got marked CPU-modified (last 600 frames):
+    /// a guest memory write, an unmap, created with an older image to copy from, created sparse.
+    std::array<u64, 4> depth_cpu_marks{};
+    /// EDEN_NX2_TC_LOG: depth/stencil images that WriteMemory marked, by the size of the write
+    /// (<= 4 KiB, <= 64 KiB, <= 1 MiB, larger) and writes that covered the whole image.
+    std::array<u64, 4> depth_write_sizes{};
+    u64 depth_whole_writes{};
 
     static constexpr s64 DEFAULT_EXPECTED_MEMORY = 1_GiB + 125_MiB;
     static constexpr s64 DEFAULT_CRITICAL_MEMORY = 1_GiB + 625_MiB;
