@@ -154,6 +154,7 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     std::array<u64, 4> upload_bytes_by_kind{};
     u64 uploads_gpu_written{};
     u64 render_target_uploads_skipped{}; ///< EDEN_NX2_TC_RT_NO_UPLOAD (last 600 frames)
+    u64 transient_target_deletes{};      ///< EDEN_NX2_TC_RT_EVICT (last 600 frames)
     /// EDEN_NX2_TC_LOG: why depth/stencil images got marked CPU-modified (last 600 frames):
     /// a guest memory write, an unmap, created with an older image to copy from, created sparse.
     std::array<u64, 4> depth_cpu_marks{};

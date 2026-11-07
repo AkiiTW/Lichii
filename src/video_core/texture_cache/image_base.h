@@ -128,6 +128,8 @@ struct ImageBase {
 
     u64 modification_tick = 0;
     size_t lru_index = SIZE_MAX;
+    /// Made while looking up a render target (EDEN_NX2_TC_RT_EVICT drops these early, undownloaded).
+    bool transient_target = false;
 
     std::array<u32, MAX_MIP_LEVELS> mip_level_offsets{};
 
