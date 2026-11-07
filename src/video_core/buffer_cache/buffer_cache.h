@@ -1494,7 +1494,35 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
             mapped_size += Core::DEVICE_PAGESIZE - ((device_addr + mapped_size) & Core::DEVICE_PAGEMASK);
         }
         const u64 upload_size = (std::min<u64>)(mapped_size, size);
-        if (upload_size != 0) {
+        // EDEN_NX2_BANK_COMPARE=1: upload only banks whose bytes changed since their last upload
+        // into this buffer. Exact: the host copy is only written by uploads of guest bytes or by
+        // the GPU, and a GPU-written bank never reaches this point (checked above).
+        static const bool bank_compare = [] {
+            const char* value = std::getenv("EDEN_NX2_BANK_COMPARE");
+            const bool on = value != nullptr && value[0] == '1';
+            LOG_INFO(HW_GPU, "EDEN_NX2_BANK_COMPARE: {}", on ? "on" : "off");
+            return on;
+        }();
+        bool unchanged = false;
+        if (bank_compare && upload_size != 0) {
+            BankShadow& shadow = bank_shadows[device_addr];
+            // GetSpan: the bank's bytes when they are contiguous in host memory, else null.
+            const u8* const guest = device_memory.GetSpan(device_addr, upload_size);
+            const bool contiguous = guest != nullptr;
+            if (contiguous && shadow.buffer_id == binding.buffer_id &&
+                shadow.bytes.size() == upload_size &&
+                std::memcmp(shadow.bytes.data(), guest, upload_size) == 0) {
+                unchanged = true;
+            } else if (contiguous) {
+                shadow.buffer_id = binding.buffer_id;
+                shadow.bytes.assign(guest, guest + upload_size);
+            } else {
+                bank_shadows.erase(device_addr);
+            }
+        }
+        if (unchanged) {
+            Nx2Profile::Add(Nx2Profile::Counter::UboBankSkipped, upload_size);
+        } else if (upload_size != 0) {
             std::array<BufferCopy, 1> copies{BufferCopy{
                 .src_offset = 0,
                 .dst_offset = buffer.Offset(device_addr),
@@ -2951,6 +2979,10 @@ void BufferCache<P>::DownloadBufferMemory(Buffer& buffer, DAddr device_addr, u64
 
 template <class P>
 void BufferCache<P>::DeleteBuffer(BufferId buffer_id, bool do_not_mark) {
+    // A slot id is reused by the next buffer: forget the bank copies made into this one.
+    std::erase_if(bank_shadows, [buffer_id](const auto& entry) {
+        return entry.second.buffer_id == buffer_id;
+    });
     if constexpr (requires { runtime.OnBufferDeleted(slot_buffers[buffer_id]); }) {
         runtime.OnBufferDeleted(slot_buffers[buffer_id]);
     }

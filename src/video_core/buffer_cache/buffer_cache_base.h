@@ -470,6 +470,13 @@ public:
     bool any_buffer_uploaded = false;
     /// Indirectly read banks of native programs already uploaded this frame.
     std::unordered_set<DAddr> native_indirect_uniforms_this_frame;
+    /// EDEN_NX2_BANK_COMPARE: the bytes each bank had when it was last uploaded, by address. A
+    /// bank whose guest bytes still match is not uploaded again (its host copy holds them).
+    struct BankShadow {
+        BufferId buffer_id;
+        std::vector<u8> bytes;
+    };
+    std::unordered_map<DAddr, BankShadow> bank_shadows;
 
 private:
     template <typename Func>

@@ -260,6 +260,7 @@ enum class Counter : u32 {
     UboClassicBytes,  ///< Bytes of uniform buffers bound by the classic path
     UboClassicSynced, ///< Classic binds whose SynchronizeBuffer found CPU-written data to upload
     UboBankBytes,     ///< Bytes of 64 KiB native banks uploaded again
+    UboBankSkipped,   ///< EDEN_NX2_BANK_COMPARE: bank bytes unchanged since the last upload
     Count,
 };
 static_assert(static_cast<size_t>(Counter::Count) <= 64, "Counter outgrew the counters array");
@@ -440,11 +441,14 @@ inline void Report(const char* thread_name = "GPU thread") {
                        : 0.0;
         };
         line += fmt::format(" | uniform buffer sizes: fast {:.0f} B each, classic {:.0f} B each "
-                            "({:.0f}/s with CPU-written data), banks {:.0f} KiB/s",
+                            "({:.0f}/s with CPU-written data), banks {:.0f} KiB/s uploaded, "
+                            "{:.0f} KiB/s unchanged",
                             bytes_each(Counter::UboFastBytes, Zone::UboFast),
                             bytes_each(Counter::UboClassicBytes, Zone::UboClassic),
                             per_second(data.counters[static_cast<size_t>(Counter::UboClassicSynced)]),
                             per_second(data.counters[static_cast<size_t>(Counter::UboBankBytes)]) /
+                                1024.0,
+                            per_second(data.counters[static_cast<size_t>(Counter::UboBankSkipped)]) /
                                 1024.0);
     }
     if (const u64 early = data.counters[static_cast<size_t>(Counter::DmaReadsEarly)]; early != 0) {
