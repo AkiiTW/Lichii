@@ -551,6 +551,7 @@ void TextureCache<P>::TickFrame() {
         }
     }
     if constexpr (requires { runtime.CurrentTick(); }) {
+        VideoCommon::Nx2Profile::Scope free_scope{VideoCommon::Nx2Profile::Zone::ImageFree};
         while (!gpu_sentenced_images.empty() &&
                runtime.IsFree(gpu_sentenced_images.front().tick)) {
             gpu_sentenced_bytes -= gpu_sentenced_images.front().bytes;
@@ -639,10 +640,12 @@ void TextureCache<P>::TickFrame() {
         transient_target_deletes = 0;
         if constexpr (requires { runtime.pooled_image_hits; }) {
             LOG_INFO(HW_GPU, "Texture cache last 600 frames: host images reused {}, made new for a "
-                             "poolable shape {}, {} MiB pooled (EDEN_NX2_TC_RT_REUSE)",
+                             "poolable shape {}, {} MiB pooled, {} pooled images destroyed to stay in "
+                             "budget (EDEN_NX2_TC_RT_REUSE)",
                      runtime.pooled_image_hits, runtime.pooled_image_misses,
-                     runtime.image_pool_bytes >> 20);
+                     runtime.image_pool_bytes >> 20, runtime.pooled_image_evictions);
             runtime.pooled_image_hits = runtime.pooled_image_misses = 0;
+            runtime.pooled_image_evictions = 0;
         }
         LOG_INFO(HW_GPU, "Texture cache last 600 frames: depth images marked CPU-modified by a "
                          "guest memory write {} (writes <=4K {}, <=64K {}, <=1M {}, larger {}; whole "
@@ -685,6 +688,7 @@ void TextureCache<P>::TickFrame() {
         seen_failed_images = failed;
     }
     if (out_of_memory || total_used_memory > minimum_memory) {
+        VideoCommon::Nx2Profile::Scope collect_scope{VideoCommon::Nx2Profile::Zone::TcCollect};
         RunGarbageCollector(out_of_memory);
     }
     if (out_of_memory) {
@@ -695,11 +699,14 @@ void TextureCache<P>::TickFrame() {
             channel_storage[c].compute_image_table.Invalidate();
         }
     }
-    sentenced_images.Tick();
-    sentenced_image_index = (sentenced_image_index + 1) % TICKS_TO_DESTROY;
-    sentenced_image_bytes[sentenced_image_index] = 0;
-    sentenced_framebuffers.Tick();
-    sentenced_image_view.Tick();
+    {
+        VideoCommon::Nx2Profile::Scope free_scope{VideoCommon::Nx2Profile::Zone::ImageFree};
+        sentenced_images.Tick();
+        sentenced_image_index = (sentenced_image_index + 1) % TICKS_TO_DESTROY;
+        sentenced_image_bytes[sentenced_image_index] = 0;
+        sentenced_framebuffers.Tick();
+        sentenced_image_view.Tick();
+    }
     TickAsyncDecode();
     TickAsyncUnswizzle();
     if (frame_tick % 600 == 0 && !uploaded_ranges.empty()) {

@@ -73,7 +73,9 @@ enum class Zone : u32 {
     ImageCreate,  ///< Host image made for a new cache image (VkImage + memory)
     ViewCreate,   ///< Image view made for a cache image
     FramebufferCreate, ///< Framebuffer made for a new set of render targets
-    TcTick,       ///< Texture cache end-of-frame work: collector, freeing sentenced images
+    TcTick,       ///< Texture cache end-of-frame work outside the zones below
+    ImageFree,    ///< Destroying images the GPU is done with (or pooling their host image)
+    TcCollect,    ///< Texture cache collector, early render target drops included
     Count,
 };
 
@@ -88,7 +90,7 @@ inline constexpr std::array<const char*, static_cast<size_t>(Zone::Count)> zone_
     "writer wait", "list submit wait", "list GPU wait",
     "ubo fast",      "ubo classic",   "ubo bank",       "storage binds",  "texbuf binds",
     "clear targets", "image join",    "image create",   "view create",    "framebuffer create",
-    "tc tick",
+    "tc tick",       "image free",    "tc collect",
 };
 
 // Read once, when the GPU thread starts (Initialize): Enabled() runs several times per method
