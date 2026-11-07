@@ -670,12 +670,15 @@ void SetCurrentThreadPriority(ThreadPriority new_priority) {
 void SetCurrentThreadName(const char* name) {
     Nx2SampleProfile::OnThreadNamed(name);
     Nx2ThreadUsage::OnThreadNamed(name);
-#ifdef _MSC_VER
-    // Sets the debugger-visible name of the current thread.
-    if (auto pf = (decltype(&SetThreadDescription))(void*)GetProcAddress(GetModuleHandle(TEXT("KernelBase.dll")), "SetThreadDescription"); pf)
-        pf(GetCurrentThread(), UTF8ToUTF16W(name).data()); // Windows 10+
-    else
-        ; // No-op
+#ifdef _WIN32
+    // Sets the debugger-visible name of the current thread (Windows 10+). MinGW builds need it
+    // too: the built-in sampler (EDEN_NX2_SAMPLE) finds threads by this name.
+    using SetThreadDescriptionFn = HRESULT(WINAPI*)(HANDLE, PCWSTR);
+    if (const auto pf = reinterpret_cast<SetThreadDescriptionFn>(reinterpret_cast<void*>(
+            GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "SetThreadDescription")));
+        pf != nullptr) {
+        pf(GetCurrentThread(), UTF8ToUTF16W(name).data());
+    }
 #elif  defined(__APPLE__)
     pthread_setname_np(name);
 #elif defined(__HAIKU__)
