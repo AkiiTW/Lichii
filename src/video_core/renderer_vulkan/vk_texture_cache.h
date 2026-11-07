@@ -589,6 +589,13 @@ public:
 
     friend class BlockLinearUnswizzle3DPass;
 
+    /// Render target whose host image may go back to the runtime's pool (EDEN_NX2_TC_RT_REUSE).
+    /// Public: the texture cache tests for it with a requires-expression, which is false (and
+    /// silently skips the call) when the member is not accessible.
+    void MarkPoolable() noexcept {
+        poolable = true;
+    }
+
 private:
     bool BlitScaleHelper(bool scale_up);
 
@@ -688,10 +695,6 @@ private:
     vk::Image original_image;
     vk::Image scaled_image;
 
-    /// Render target whose host image may go back to the runtime's pool (EDEN_NX2_TC_RT_REUSE).
-    void MarkPoolable() noexcept {
-        poolable = true;
-    }
     u64 pool_key = 0; ///< Shape key when this image's host image can be pooled, else 0
     bool poolable = false;
 
