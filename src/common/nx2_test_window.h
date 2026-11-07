@@ -11,8 +11,8 @@ namespace Nx2TestWindow {
 // in place. EDEN_NX2_TEST_START / EDEN_NX2_TEST_SECONDS (seconds after the game is loaded) set
 // it; without them it follows the sampler's window when EDEN_NX2_SAMPLE is set
 // (EDEN_NX2_SAMPLE_START / _SECONDS). EDEN_NX2_TEST_LABEL is the instruction shown during the
-// window, EDEN_NX2_TEST_PREPARE the one shown before it. The start and end are logged, so a
-// log can be cut to the window.
+// window, EDEN_NX2_TEST_PREPARE the one shown before it, EDEN_NX2_TEST_PURPOSE what the test is
+// for (shown the whole time). The start and end are logged, so a log can be cut to the window.
 
 enum class Phase { None, Waiting, Recording, Done };
 
@@ -22,6 +22,7 @@ struct Status {
     double seconds_total = 0.0;
     std::string prepare;
     std::string label;
+    std::string purpose;
 };
 
 /// Called when a game is loaded: starts the clock (and the start/end log lines) if configured.
