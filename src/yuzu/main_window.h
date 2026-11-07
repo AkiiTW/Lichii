@@ -60,6 +60,7 @@ class QSlider;
 class QHBoxLayout;
 class WaitTreeWidget;
 class PerformanceOverlay;
+class TestOverlay;
 #ifdef HAS_RESHADE
 class ConfigurePostProcessing;
 #endif
@@ -519,6 +520,7 @@ private:
     QTimer emu_terminate_timer;
     OverlayDialog* shutdown_dialog{};
     PerformanceOverlay* perf_overlay = nullptr;
+    TestOverlay* test_overlay = nullptr;
 #ifdef HAS_RESHADE
     ConfigurePostProcessing* post_processing_dialog = nullptr;
 #endif

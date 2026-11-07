@@ -13,6 +13,7 @@
 #include "common/fs/fs.h"
 #include "common/logging.h"
 #include "common/nx2_sampler.h"
+#include "common/nx2_test_window.h"
 #include "common/adpf.h"
 #include "common/settings.h"
 #include "common/settings_enums.h"
@@ -492,11 +493,13 @@ struct System::Impl {
         }
         debug_service = Nx2Debug::MaybeStartService(system, name, params.program_id);
         Nx2Sampler::StartFromEnvironment();
+        Nx2TestWindow::Start();
         return SystemResultStatus::Success;
     }
 
     void ShutdownMainProcess() {
         debug_service.reset();
+        Nx2TestWindow::Stop();
         SetShuttingDown(true);
         Common::ADPF::Shutdown();
 
