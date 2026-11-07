@@ -85,3 +85,8 @@ visuel vu par l'utilisateur (marché). À vérifier un jour en forêt Kokiri (bu
 ## Carnet partagé
 https://github.com/AkiiTW/lichii-oot-notes (FINDINGS.md, WORK.md) : y ajouter chaque trouvaille ; lire les ajouts de Frizti.
 Copie locale : scratchpad/notes (remote origin).
+
+## Cache de textures (2026-11-07 16:38)
+Cause : cibles de rendu recréées ~200/s (mémoire réutilisée), remplies avec la mémoire du jeu. EDEN_NX2_TC_RT_NO_UPLOAD=2 GARDÉ :
+marché 48,6 → 40,4 ms/image, images >100 ms 42 → ~5. Reste : uploads de profondeur par un autre chemin (1,4-5 Go/600 images), clears ~70 ms/s,
+garder les cibles aliasées en vie. Seuils TC plus grands (12288/13824) = pire (VRAM pleine).
