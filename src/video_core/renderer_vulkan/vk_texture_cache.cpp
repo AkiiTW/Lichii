@@ -2959,16 +2959,47 @@ vk::Image TextureCacheRuntime::TakePooledImage(u64 key) {
 }
 
 bool TextureCacheRuntime::PoolImage(u64 key, u64 bytes, vk::Image& image) {
-    // Bounded: a few images per shape and 1 GiB in all, so the pool never holds much memory the
-    // texture cache does not count.
-    constexpr size_t MaxPerShape = 8;
-    constexpr u64 MaxBytes = 1ULL << 30;
-    auto& shape = image_pool[key];
-    if (shape.size() >= MaxPerShape || image_pool_bytes + bytes > MaxBytes) {
+    // Bounded in VRAM (the device memory the texture cache reads includes it). Least recently
+    // pooled first out: the first version kept the oldest and refused new ones once full, so the
+    // pool filled with shapes no longer asked for (~35 % reused).
+    constexpr size_t MaxPerShape = 32;
+    constexpr u64 MaxBytes = 512ULL << 20;
+    if (bytes > MaxBytes) {
         return false;
     }
+    auto& shape = image_pool[key];
+    if (shape.size() >= MaxPerShape) {
+        return false;
+    }
+    const u64 serial = ++image_pool_serial;
     image_pool_bytes += bytes;
-    shape.push_back(PooledImage{std::move(image), bytes});
+    shape.push_back(PooledImage{std::move(image), bytes, serial});
+    image_pool_order.emplace_back(key, serial);
+    while (image_pool_bytes > MaxBytes && !image_pool_order.empty()) {
+        const auto [old_key, old_serial] = image_pool_order.front();
+        image_pool_order.pop_front();
+        const auto it = image_pool.find(old_key);
+        if (it == image_pool.end()) {
+            continue;
+        }
+        auto& images = it->second;
+        const auto found = std::ranges::find(images, old_serial, &PooledImage::serial);
+        if (found == images.end()) {
+            continue; // Taken already
+        }
+        image_pool_bytes -= found->bytes;
+        images.erase(found);
+        ++pooled_image_evictions;
+    }
+    if (image_pool_order.size() > 4 * 4096) {
+        // Taken entries pile up at the back of the order when the pool never overflows.
+        std::erase_if(image_pool_order, [this](const std::pair<u64, u64>& entry) {
+            const auto it = image_pool.find(entry.first);
+            return it == image_pool.end() ||
+                   std::ranges::find(it->second, entry.second, &PooledImage::serial) ==
+                       it->second.end();
+        });
+    }
     return true;
 }
 
