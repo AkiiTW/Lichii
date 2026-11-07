@@ -461,12 +461,13 @@ void TextureCache<P>::TickFrame() {
         std::sort(shapes.rbegin(), shapes.rend());
         for (size_t i = 0; i < std::min<size_t>(10, shapes.size()); ++i) {
             const u64 key = shapes[i].second;
-            LOG_INFO(HW_GPU, "  created {}x: format {} type {} levels {} layers {} {}x{} (last at {:#x})",
-                     shapes[i].first, key >> 56, (key >> 52) & 0xF, (key >> 48) & 0xF,
-                     (key >> 36) & 0xFFF, (key >> 18) & 0x3FFFF, key & 0x3FFFF,
-                     created_shapes[key].second);
+            LOG_INFO(HW_GPU, "  created {}x at {} addresses: format {} type {} levels {} layers {} {}x{} (last at {:#x})",
+                     shapes[i].first, created_shape_addresses[key].size(), key >> 56,
+                     (key >> 52) & 0xF, (key >> 48) & 0xF, (key >> 36) & 0xFFF,
+                     (key >> 18) & 0x3FFFF, key & 0x3FFFF, created_shapes[key].second);
         }
         created_shapes.clear();
+        created_shape_addresses.clear();
         // The per-image and per-shape tallies only feed debug lines: skip them while those are off.
         // EDEN_NX2_TC_LOG wants the shapes of the images created (logged above at Info).
         debug_stats = log_tc || Common::Log::IsLevelEnabled(Common::Log::Class::HW_GPU, Common::Log::Level::Debug);
@@ -2735,6 +2736,7 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
             auto& shape = created_shapes[key];
             ++shape.first;
             shape.second = gpu_addr;
+            created_shape_addresses[key].insert(gpu_addr);
         }
         ++images_created;
     }
