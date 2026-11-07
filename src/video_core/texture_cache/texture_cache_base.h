@@ -146,6 +146,11 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     u64 images_deleted{};
     std::map<u64, std::pair<u32, GPUVAddr>> created_shapes;
     bool debug_stats{true}; ///< Collect what only the debug statistics lines use
+    /// EDEN_NX2_TC_LOG: uploads from guest memory by kind (last 600 frames): ASTC, BCn, depth,
+    /// other colour; and how many went into images the GPU had already written (render targets).
+    std::array<u64, 4> uploads_by_kind{};
+    std::array<u64, 4> upload_bytes_by_kind{};
+    u64 uploads_gpu_written{};
 
     static constexpr s64 DEFAULT_EXPECTED_MEMORY = 1_GiB + 125_MiB;
     static constexpr s64 DEFAULT_CRITICAL_MEMORY = 1_GiB + 625_MiB;

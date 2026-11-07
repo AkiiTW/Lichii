@@ -432,6 +432,15 @@ void TextureCache<P>::TickFrame() {
                  async_decodes_queued, astc_opaque_images, astc_alpha_images);
         LOG_INFO(HW_GPU, "Texture cache last 600 frames: {} uploads from guest memory, {} MiB (largest {} MiB, {} by layer)",
                  images_uploaded, uploaded_bytes >> 20, largest_upload >> 20, layer_uploads);
+        LOG_INFO(HW_GPU, "Texture cache last 600 frames: uploads by kind: ASTC {} ({} MiB), BCn {} "
+                         "({} MiB), depth {} ({} MiB), other colour {} ({} MiB); {} into GPU-written "
+                         "images",
+                 uploads_by_kind[0], upload_bytes_by_kind[0] >> 20, uploads_by_kind[1],
+                 upload_bytes_by_kind[1] >> 20, uploads_by_kind[2], upload_bytes_by_kind[2] >> 20,
+                 uploads_by_kind[3], upload_bytes_by_kind[3] >> 20, uploads_gpu_written);
+        uploads_by_kind = {};
+        upload_bytes_by_kind = {};
+        uploads_gpu_written = 0;
         images_uploaded = uploaded_bytes = largest_upload = layer_uploads = 0;
         astc_opaque_images = astc_alpha_images = 0;
         std::vector<std::pair<u32, u64>> shapes;
@@ -439,14 +448,15 @@ void TextureCache<P>::TickFrame() {
         std::sort(shapes.rbegin(), shapes.rend());
         for (size_t i = 0; i < std::min<size_t>(10, shapes.size()); ++i) {
             const u64 key = shapes[i].second;
-            LOG_DEBUG(HW_GPU, "  created {}x: format {} type {} levels {} layers {} {}x{} (last at {:#x})",
+            LOG_INFO(HW_GPU, "  created {}x: format {} type {} levels {} layers {} {}x{} (last at {:#x})",
                      shapes[i].first, key >> 56, (key >> 52) & 0xF, (key >> 48) & 0xF,
                      (key >> 36) & 0xFFF, (key >> 18) & 0x3FFFF, key & 0x3FFFF,
                      created_shapes[key].second);
         }
         created_shapes.clear();
         // The per-image and per-shape tallies only feed debug lines: skip them while those are off.
-        debug_stats = Common::Log::IsLevelEnabled(Common::Log::Class::HW_GPU, Common::Log::Level::Debug);
+        // EDEN_NX2_TC_LOG wants the shapes of the images created (logged above at Info).
+        debug_stats = log_tc || Common::Log::IsLevelEnabled(Common::Log::Class::HW_GPU, Common::Log::Level::Debug);
         gc_deletes = gc_costly_deletes = gc_download_deletes = async_decodes_queued = 0;
         images_created = images_deleted = 0;
     }
@@ -1778,6 +1788,16 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     ++images_uploaded;
     uploaded_bytes += image.guest_size_bytes;
     largest_upload = (std::max<u64>)(largest_upload, image.guest_size_bytes);
+    {
+        const PixelFormat format = image.info.format;
+        const size_t kind = IsPixelFormatASTC(format) ? 0
+                            : IsPixelFormatBCn(format) ? 1
+                            : GetFormatType(format) != SurfaceType::ColorTexture ? 2
+                                                                                 : 3;
+        ++uploads_by_kind[kind];
+        upload_bytes_by_kind[kind] += image.guest_size_bytes;
+        uploads_gpu_written += True(image.flags & ImageFlagBits::GpuModified) ? 1 : 0;
+    }
     if (!UploadInChunks(image)) {
         auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
         UploadImageContents(image, staging);
