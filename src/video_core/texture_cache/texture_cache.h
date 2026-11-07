@@ -3689,24 +3689,28 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     {
     VideoCommon::Nx2Profile::Scope overlaps_scope{VideoCommon::Nx2Profile::Zone::DeleteOverlaps};
     delete_overlap_entries += image.aliased_images.size() + image.overlapping_images.size();
+    // Each image is in an alias's or overlap's list once: stop at it instead of scanning the whole
+    // list (erase_if). Ocarina's render targets overlap ~140 others each, so unlinking one walked
+    // ~140 lists of ~140 entries. The order of what remains is kept.
     for (const AliasedImage& alias : image.aliased_images) {
         ImageBase& other_image = slot_images[alias.id];
-        [[maybe_unused]] const size_t num_removed_aliases =
-            std::erase_if(other_image.aliased_images, [image_id](const AliasedImage& other_alias) {
-                return other_alias.id == image_id;
-            });
+        auto& other_aliases = other_image.aliased_images;
+        const auto found = std::ranges::find(other_aliases, image_id, &AliasedImage::id);
+        ASSERT_MSG(found != other_aliases.end(), "Image missing from its alias's list");
+        if (found != other_aliases.end()) {
+            other_aliases.erase(found);
+        }
         other_image.CheckAliasState();
-        ASSERT_MSG(num_removed_aliases == 1, "Invalid number of removed aliases: {}",
-                   num_removed_aliases);
     }
     for (const ImageId overlap_id : image.overlapping_images) {
         ImageBase& other_image = slot_images[overlap_id];
-        [[maybe_unused]] const size_t num_removed_overlaps = std::erase_if(
-            other_image.overlapping_images,
-            [image_id](const ImageId other_overlap_id) { return other_overlap_id == image_id; });
+        auto& other_overlaps = other_image.overlapping_images;
+        const auto found = std::ranges::find(other_overlaps, image_id);
+        ASSERT_MSG(found != other_overlaps.end(), "Image missing from its overlap's list");
+        if (found != other_overlaps.end()) {
+            other_overlaps.erase(found);
+        }
         other_image.CheckBadOverlapState();
-        ASSERT_MSG(num_removed_overlaps == 1, "Invalid number of removed overlapps: {}",
-                   num_removed_overlaps);
     }
     }
     VideoCommon::Nx2Profile::Scope sentence_scope{VideoCommon::Nx2Profile::Zone::DeleteSentence};
