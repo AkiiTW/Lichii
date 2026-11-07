@@ -314,6 +314,7 @@ void TextureCache<P>::ApplyThresholdOverrides(bool log) {
 
 template <class P>
 void TextureCache<P>::TickFrame() {
+    VideoCommon::Nx2Profile::Scope tick_scope{VideoCommon::Nx2Profile::Zone::TcTick};
     // Upload buffers grown for one huge image (title 1's 341 MiB terrain layer pools) are freed
     // rather than kept for the rest of the session.
     for (auto* const scratch : {&swizzle_data_buffer, &unswizzle_data_buffer}) {
@@ -983,6 +984,7 @@ FramebufferId TextureCache<P>::GetFramebufferId(const RenderTargets& key) {
         return id ? &slot_image_views[id] : nullptr;
     });
     ImageView* const depth_buffer = key.depth_buffer_id ? &slot_image_views[key.depth_buffer_id] : nullptr;
+    VideoCommon::Nx2Profile::Scope framebuffer_scope{VideoCommon::Nx2Profile::Zone::FramebufferCreate};
     runtime.FlushDeferredClear();
     framebuffer_id = slot_framebuffers.insert(runtime, color_buffers, depth_buffer, key);
     return framebuffer_id;
@@ -2657,6 +2659,7 @@ ImageId TextureCache<P>::InsertImage(const ImageInfo& info, GPUVAddr gpu_addr,
 
 template <class P>
 ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DAddr cpu_addr) {
+    VideoCommon::Nx2Profile::Scope join_scope{VideoCommon::Nx2Profile::Zone::ImageJoin};
     ImageInfo new_info = info;
     const size_t size_bytes = CalculateGuestSizeInBytes(new_info);
     const bool broken_views = runtime.HasBrokenTextureViewFormats();
@@ -2766,7 +2769,10 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
             }
         }
     }
-    const ImageId new_image_id = slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+    const ImageId new_image_id = [&] {
+        VideoCommon::Nx2Profile::Scope create_scope{VideoCommon::Nx2Profile::Zone::ImageCreate};
+        return slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+    }();
     Image& new_image = slot_images[new_image_id];
 
     new_image.allocation_tick = frame_tick;
@@ -3422,7 +3428,10 @@ ImageViewId TextureCache<P>::FindOrEmplaceImageView(ImageId image_id, const Imag
                  info.range.base.level, info.range.extent.levels, info.range.base.layer,
                  info.range.extent.layers);
     }
-    const ImageViewId image_view_id = slot_image_views.insert(runtime, info, image_id, image, slot_images);
+    const ImageViewId image_view_id = [&] {
+        VideoCommon::Nx2Profile::Scope view_scope{VideoCommon::Nx2Profile::Zone::ViewCreate};
+        return slot_image_views.insert(runtime, info, image_id, image, slot_images);
+    }();
     image.InsertView(info, image_view_id);
     return image_view_id;
 }

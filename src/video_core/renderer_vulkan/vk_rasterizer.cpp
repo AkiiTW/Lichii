@@ -1311,8 +1311,11 @@ void RasterizerVulkan::Clear(u32 layer_count) {
     }
 
     std::scoped_lock lock{texture_cache.mutex};
-    texture_cache.UpdateRenderTargets(true);
-    const Framebuffer* const framebuffer = texture_cache.GetFramebuffer();
+    const Framebuffer* const framebuffer = [&] {
+        VideoCommon::Nx2Profile::Scope targets_scope{VideoCommon::Nx2Profile::Zone::ClearTargets};
+        texture_cache.UpdateRenderTargets(true);
+        return texture_cache.GetFramebuffer();
+    }();
     if (frame_dump.Capturing() || flash_watch.WatchesPasses()) {
         FrameDumpPass(framebuffer);
     }
