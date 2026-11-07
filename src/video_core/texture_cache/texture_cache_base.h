@@ -160,7 +160,8 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     /// Images with transient_target set, so EDEN_NX2_TC_RT_EVICT checks only these each frame
     /// instead of walking the whole LRU list (thousands of textures older than a few frames).
     std::vector<ImageId> transient_targets;
-    u64 transient_target_deletes{};      ///< EDEN_NX2_TC_RT_EVICT (last 600 frames)
+    u64 transient_target_deletes{};
+    u64 delete_overlap_entries{}; ///< Overlaps + aliases of deleted images (last 600 frames)      ///< EDEN_NX2_TC_RT_EVICT (last 600 frames)
     /// EDEN_NX2_TC_LOG: why depth/stencil images got marked CPU-modified (last 600 frames):
     /// a guest memory write, an unmap, created with an older image to copy from, created sparse.
     std::array<u64, 4> depth_cpu_marks{};

@@ -78,6 +78,9 @@ enum class Zone : u32 {
     TcCollect,    ///< Texture cache collector, early render target drops included
     ImageDelete,  ///< Removing an image from the cache (DeleteImage, framebuffers apart)
     FramebufferRemove, ///< Looking for and dropping the framebuffers of a deleted image's views
+    DeleteViews,  ///< DeleteImage: forgetting and sentencing the image's views
+    DeleteOverlaps, ///< DeleteImage: removing the image from its aliases' and overlaps' lists
+    DeleteSentence, ///< DeleteImage: moving the image to the sentenced list and freeing its slot
     Count,
 };
 
@@ -93,6 +96,7 @@ inline constexpr std::array<const char*, static_cast<size_t>(Zone::Count)> zone_
     "ubo fast",      "ubo classic",   "ubo bank",       "storage binds",  "texbuf binds",
     "clear targets", "image join",    "image create",   "view create",    "framebuffer create",
     "tc tick",       "image free",    "tc collect",     "image delete",   "framebuffer remove",
+    "delete views",  "delete overlaps", "delete sentence",
 };
 
 // Read once, when the GPU thread starts (Initialize): Enabled() runs several times per method
