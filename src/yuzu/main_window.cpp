@@ -561,7 +561,7 @@ MainWindow::MainWindow(bool has_broken_vulkan)
     }
 
     // The first launch asks for Ocarina of Time's frame rate (not when started with a game,
-    // e.g. from a shortcut or script: that keeps the 60 FPS default until the next plain launch).
+    // e.g. from a shortcut or script: that keeps the 30 FPS default until the next plain launch).
     if (!launched_with_game && !Settings::values.oot_fps_asked.GetValue()) {
         QTimer::singleShot(0, this, &MainWindow::AskOotFrameRate);
     }
@@ -578,7 +578,8 @@ void MainWindow::AskOotFrameRate() {
            "Switch any time with the 60 FPS / 30 FPS button at the bottom of the window."));
     QPushButton* const fps60 = box.addButton(tr("60 FPS"), QMessageBox::AcceptRole);
     QPushButton* const fps30 = box.addButton(tr("30 FPS (lower-end PCs)"), QMessageBox::AcceptRole);
-    box.setDefaultButton(fps60);
+    // 30 FPS first: on a Zen 2 CPU the game runs steadier there than chasing 60.
+    box.setDefaultButton(fps30);
     box.exec();
     Settings::values.oot_30fps.SetValue(box.clickedButton() == fps30);
     Settings::values.oot_fps_asked.SetValue(true);
