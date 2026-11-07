@@ -121,3 +121,10 @@ Pris : #412 (moins de comptabilité du back), #446 (canaux sondés toutes les 50
 (sondes de lumière au-delà de 64 Mio = brume blanche de la plaine). Laissés : DLSS (#606, Streamline), #616, #413 (déjà équivalent),
 #178, #641 (17 k lignes : attendre le portage de Frizti). Marché : 33,6 ms/image (blocs 33,4-33,9 = quasi 30 FPS verrouillés),
 0 image > 100 ms (max 73 ms), attentes de relecture 150-195 → 108-145 ms/s, 61 k rendus/s. Joueur : « olala c'est très bon ».
+
+## Fin de session (2026-11-08 00:44) : pause jusqu'à la V3.5 de Frizti
+Version du joueur : 9465605 (try/zortos116, = claude/v3-zen2 avant 33ded68). Réglages de jeu normal (sans mesures ni panneau) :
+clean_words, BANK_COMPARE=1, RT_NO_UPLOAD=3, RT_EVICT=4, RT_REUSE=1 (outputs/appdata_switches_jeu.txt).
+33ded68 (journal des images > 60 ms) poussé mais pas compilé (annulé) : sert pour la « chasse aux pics » (plaine, nouvelles zones,
+TEST_START=30, outputs/appdata_switches21.txt). Plaine au chaud : 30 FPS verrouillés ; pics à l'arrivée / nouvelles zones.
+À la V3.5 : rebaser nos changements dessus (v3.5-proposals/ P01-P12 + apports zortos), refaire le test du marché.
