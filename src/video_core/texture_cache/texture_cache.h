@@ -149,13 +149,18 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
     }();
     if (rt_evict_frames != 0 && frame_tick > rt_evict_frames) {
         boost::container::small_vector<ImageId, 64> stale;
-        lru_cache.ForEachItemBelow(frame_tick - rt_evict_frames, [&](ImageId image_id) {
+        const u64 threshold = frame_tick - rt_evict_frames;
+        for (const ImageId image_id : transient_targets) {
             const Image& image = slot_images[image_id];
-            if (image.transient_target && False(image.flags & ImageFlagBits::IsDecoding)) {
+            if (True(image.flags & ImageFlagBits::Registered) &&
+                False(image.flags & ImageFlagBits::IsDecoding) &&
+                lru_cache.GetTick(image.lru_index) <= threshold) {
                 stale.push_back(image_id);
+                if (stale.size() >= 64) {
+                    break;
+                }
             }
-            return stale.size() >= 64;
-        });
+        }
         for (const ImageId image_id : stale) {
             Image& image = slot_images[image_id];
             MarkStale(image); // before UntrackImage (see MarkStale)
@@ -3042,6 +3047,9 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
 
     new_image.allocation_tick = frame_tick;
     new_image.transient_target = finding_render_target;
+    if (finding_render_target) {
+        transient_targets.push_back(new_image_id);
+    }
     {
         // Which shapes are being created (periodic log): format, type, levels, layers, size.
         const u64 key = (u64{static_cast<u32>(new_info.format)} << 56) |
@@ -3978,9 +3986,17 @@ void TextureCache<P>::UntrackImage(ImageBase& image, ImageId image_id) {
 
 template <class P>
 void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
+    VideoCommon::Nx2Profile::Scope delete_scope{VideoCommon::Nx2Profile::Zone::ImageDelete};
     ImageBase& image = slot_images[image_id];
     ++images_deleted;
     MarkStale(image);
+    if (image.transient_target) {
+        if (const auto it = std::ranges::find(transient_targets, image_id);
+            it != transient_targets.end()) {
+            *it = transient_targets.back();
+            transient_targets.pop_back();
+        }
+    }
     // Drop every decode still queued for it, whatever IsDecoding says: an image re-decoded while
     // a decode was in flight has two, and the first to finish clears the flag. A decode left
     // behind was uploaded into the next image to take this slot (another texture's data: garbage
@@ -4115,6 +4131,7 @@ void TextureCache<P>::RemoveImageViewReferences(std::span<const ImageViewId> rem
 
 template <class P>
 void TextureCache<P>::RemoveFramebuffers(std::span<const ImageViewId> removed_views) {
+    VideoCommon::Nx2Profile::Scope remove_scope{VideoCommon::Nx2Profile::Zone::FramebufferRemove};
     runtime.FlushDeferredClear();
     auto it = framebuffers.begin();
     while (it != framebuffers.end()) {

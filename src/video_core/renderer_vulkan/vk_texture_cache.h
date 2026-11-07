@@ -244,6 +244,13 @@ public:
     u64 pooled_image_hits = 0;   ///< Images taken from the pool (logged with the texture cache)
     u64 pooled_image_misses = 0; ///< Pool keys asked for with nothing pooled
     u64 pooled_image_evictions = 0; ///< Pooled images destroyed to stay in budget
+    /// Depth comparison and min/max filter support by view format: asked once per format instead
+    /// of on every image view made (~600 a second in Ocarina's market).
+    struct ViewFormatSupport {
+        bool depth_comparison;
+        bool minmax_filter;
+    };
+    std::unordered_map<VkFormat, ViewFormatSupport> view_format_support;
     struct PooledImage {
         vk::Image image;
         u64 bytes;
