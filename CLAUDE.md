@@ -53,7 +53,7 @@ Il travaille sur les attentes du front (lectures DMA des macros), nous sur le co
 - 2026-11-07 14:49 — marché 33-38 FPS. Analyse des ~2 000 attentes/s du front ; test d'un contrôle de
   recouvrement octet par octet (pas d'attente pour une écriture voisine sur la même page) ; ensuite suivre
   les plages écrites par les envois inline.
-→ Récupérer ses commits dès leur publication (gain estimé chez nous : jusqu'à ~+15 %, trous du back ~130 ms/s).
+→ Ne pas surveiller son dépôt : l'utilisateur suit Frizti en direct (Discord) et dira quand intégrer ses commits. (gain estimé chez nous : jusqu'à ~+15 %, trous du back ~130 ms/s).
 
 ## Test de référence avec fenêtre (2026-11-07 14:55, build d8e4fe2, marché 150-270 s après chargement)
 - ~21-22 FPS (frames 42-47 ms), ~45-48 k draws/s, ~2 100 draws/image ; GPUBack ~910 ms/s.
