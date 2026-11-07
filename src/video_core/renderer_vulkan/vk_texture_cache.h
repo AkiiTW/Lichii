@@ -237,16 +237,22 @@ public:
     /// EDEN_NX2_TC_RT_REUSE: host images of render targets dropped by EDEN_NX2_TC_RT_EVICT are
     /// kept by shape (pool key) and handed to the next image of that shape instead of a new one.
     [[nodiscard]] vk::Image TakePooledImage(u64 key);
-    /// Keeps `image` for reuse; returns false (the caller destroys it) when the pool is full.
+    /// Keeps `image` for reuse. When the pool is over its budget, the images pooled longest ago
+    /// are destroyed first, so the pool follows the shapes the game uses now.
     bool PoolImage(u64 key, u64 bytes, vk::Image& image);
     [[nodiscard]] static bool ImageReuseEnabled();
     u64 pooled_image_hits = 0;   ///< Images taken from the pool (logged with the texture cache)
     u64 pooled_image_misses = 0; ///< Pool keys asked for with nothing pooled
+    u64 pooled_image_evictions = 0; ///< Pooled images destroyed to stay in budget
     struct PooledImage {
         vk::Image image;
         u64 bytes;
+        u64 serial;
     };
     std::unordered_map<u64, std::vector<PooledImage>> image_pool;
+    /// (key, serial) of every pooled image in pooling order; entries already taken are skipped.
+    std::deque<std::pair<u64, u64>> image_pool_order;
+    u64 image_pool_serial = 0;
     u64 image_pool_bytes = 0;
 
     void BarrierFeedbackLoop();
