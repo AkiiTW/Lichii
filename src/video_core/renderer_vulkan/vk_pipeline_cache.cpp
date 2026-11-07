@@ -1797,6 +1797,7 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline(
     std::span<Shader::Environment* const> envs, PipelineStatistics* statistics,
     bool build_in_parallel, std::shared_ptr<ShaderPools> emit_pools,
     std::unique_ptr<EmissionBudget::Reservation> reservation) try {
+    VideoCommon::Nx2Perf::g_hitch.pipelines_built.fetch_add(1, std::memory_order_relaxed);
     auto hash = key.Hash();
     LOG_DEBUG(Render_Vulkan, "{:#016x}", hash);
     size_t env_index{0};
@@ -2133,6 +2134,7 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline() {
 ComputePipelineCacheEntry PipelineCache::CreateComputePipeline(
     const ComputePipelineCacheKey& key, const ShaderInfo* shader) {
     const auto begin = std::chrono::steady_clock::now();
+    VideoCommon::Nx2Perf::g_hitch.pipelines_built.fetch_add(1, std::memory_order_relaxed);
     SCOPE_EXIT {
         ReportRuntimePipeline("Compute", begin,
                               fmt::format("pipeline={:016x} s6:{:016x} address={:#x}", key.Hash(),

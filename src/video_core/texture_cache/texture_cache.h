@@ -32,6 +32,7 @@
 #include "video_core/texture_cache/texture_cache_base.h"
 #include "video_core/texture_cache/util.h"
 #include "video_core/nx2.h"
+#include "video_core/nx2_perf.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/render_trace.h"
 #include "video_core/textures/decoders.h"
@@ -215,6 +216,7 @@ void TextureCache<P>::RunGarbageCollector() {
             UntrackImage(image, image_id);
         }
         ++(True(image.flags & ImageFlagBits::CostlyLoad) ? gc_costly_deletes : gc_deletes);
+        Nx2Perf::g_hitch.collector_deletes.fetch_add(1, std::memory_order_relaxed);
         UnregisterImage(image_id);
         DeleteImage(image_id, image.scale_tick > frame_tick + 5);
         if (aggressive_mode && total_used_memory < critical_memory) {
@@ -1886,6 +1888,9 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
                                                                                  : 3;
         ++uploads_by_kind[kind];
         upload_bytes_by_kind[kind] += image.guest_size_bytes;
+        Nx2Perf::g_hitch.texture_uploads.fetch_add(1, std::memory_order_relaxed);
+        Nx2Perf::g_hitch.texture_upload_bytes.fetch_add(image.guest_size_bytes,
+                                                         std::memory_order_relaxed);
         uploads_gpu_written += True(image.flags & ImageFlagBits::GpuModified) ? 1 : 0;
     }
     if (!UploadInChunks(image)) {
@@ -2787,6 +2792,7 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
     }
     const ImageId new_image_id = [&] {
         VideoCommon::Nx2Profile::Scope create_scope{VideoCommon::Nx2Profile::Zone::ImageCreate};
+        Nx2Perf::g_hitch.images_created.fetch_add(1, std::memory_order_relaxed);
         return slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
     }();
     Image& new_image = slot_images[new_image_id];

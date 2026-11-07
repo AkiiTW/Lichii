@@ -166,6 +166,7 @@ void HostPacer::NoteShown(u64 id, Clock::time_point shown, bool was_lost) {
     }
     if (last_shown && last_shown_id + 1 == id) {
         const double interval = static_cast<double>(Ns{shown - *last_shown}.count());
+        LogSlowFrame(interval / 1e6);
         interval_sum_ms += interval / 1e6;
         interval_max_ms = (std::max)(interval_max_ms, interval / 1e6);
         const auto count = std::clamp<s64>(std::llround(interval / refresh_ns), 0, 5);
@@ -196,6 +197,35 @@ void HostPacer::NoteShown(u64 id, Clock::time_point shown, bool was_lost) {
     last_shown = shown;
     last_shown_id = id;
     Report(shown);
+}
+
+void HostPacer::LogSlowFrame(double interval_ms) {
+    // Read every frame so the difference covers this frame only; logged for frames over 60 ms
+    // (a hitch at 30 fps), with what the emulator did meanwhile.
+    auto& h = VideoCommon::Nx2Perf::g_hitch;
+    const std::array<u64, 7> now{
+        h.readback_wait_ns.load(std::memory_order_relaxed),
+        h.readbacks.load(std::memory_order_relaxed),
+        h.texture_uploads.load(std::memory_order_relaxed),
+        h.texture_upload_bytes.load(std::memory_order_relaxed),
+        h.images_created.load(std::memory_order_relaxed),
+        h.pipelines_built.load(std::memory_order_relaxed),
+        h.collector_deletes.load(std::memory_order_relaxed),
+    };
+    std::array<u64, 7> delta{};
+    for (size_t i = 0; i < now.size(); ++i) {
+        delta[i] = now[i] - hitch_last[i];
+    }
+    hitch_last = now;
+    if (interval_ms < 60.0) {
+        return;
+    }
+    LOG_INFO(Render_Vulkan,
+             "Slow frame: {:.1f} ms shown; meanwhile guest readbacks {} waiting {:.1f} ms, "
+             "textures uploaded {} ({} KiB), images made {}, pipelines built {}, collector "
+             "deletes {}",
+             interval_ms, delta[1], delta[0] / 1e6, delta[2], delta[3] >> 10, delta[4], delta[5],
+             delta[6]);
 }
 
 void HostPacer::NoteHold(Ns hold) {

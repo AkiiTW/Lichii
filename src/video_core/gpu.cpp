@@ -25,6 +25,7 @@
 #include "core/hle/service/nvdrv/nvdata.h"
 #include "core/perf_stats.h"
 #include "video_core/cdma_pusher.h"
+#include "video_core/nx2_perf.h"
 #include "video_core/control/channel_state.h"
 #include "video_core/control/scheduler.h"
 #include "video_core/dma_pusher.h"
@@ -250,6 +251,8 @@ struct GPU::Impl {
         static u64 total_bytes{};
         const u64 ns = static_cast<u64>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(waited).count());
+        VideoCommon::Nx2Perf::g_hitch.readback_wait_ns.fetch_add(ns, std::memory_order_relaxed);
+        VideoCommon::Nx2Perf::g_hitch.readbacks.fetch_add(1, std::memory_order_relaxed);
         std::scoped_lock lock{report_mutex};
         ++count;
         total_ns += ns;

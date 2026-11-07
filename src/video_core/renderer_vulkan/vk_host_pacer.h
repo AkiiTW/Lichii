@@ -91,6 +91,9 @@ private:
     std::array<u32, 6> refreshes_shown{}; // 0 (same refresh), 1, 2, 3, 4, 5+
     u32 frames{}, held{}, missed{}, lost{}, caught_up{};
     double interval_sum_ms{}, interval_max_ms{}, hold_sum_ms{}, latency_sum_ms{};
+    /// Totals of VideoCommon::Nx2Perf::g_hitch at the last frame shown (slow-frame log).
+    std::array<u64, 7> hitch_last{};
+    void LogSlowFrame(double interval_ms);
 };
 
 /// The display refresh period from the OS compositor (Windows); nullopt elsewhere or on failure.
