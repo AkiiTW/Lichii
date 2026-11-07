@@ -75,3 +75,9 @@ sous-zones dans TextureUpload, compteurs de taille des storage buffers.
 ## clean_words (2026-11-07 15:13) : GARDÉ
 storage binds 64 → 17 ms/s ; draws/s +3 % ; frame inchangé (bruit textures + attentes front/back). Aucun défaut
 visuel vu par l'utilisateur (marché). À vérifier un jour en forêt Kokiri (bug #161 suspecté à l'époque).
+- 2026-11-07 15:18 — sa file de travail (LOOP_STATUS.md) : EXP10 (écritures des dispatches/uploads bornées, −6 % d'attente
+  du front) ; ensuite releases de sémaphores/requêtes, drains de 14-18 ms aux fence release (ReleaseFences, puller.cpp),
+  ~410 lectures/s « noted write ». Outils : parcours automatique fontaine (position de Link lue en mémoire, caméra fixe),
+  replay_route.py, histogramme des lows 1 %/0,1 %, PGO réentraîné sur marché + plaine. Ports zortos : #465, #408, #463,
+  #418, #411, #415, #232, #395/#337/#353. **Son point 13 = notre piste banques** (vérif. par bind ~10 % du back chez lui) :
+  partager nos chiffres BANK_COMPARE / clean_words avec lui.
